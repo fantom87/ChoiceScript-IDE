@@ -23,6 +23,7 @@ import { parseChoiceTree } from './choicescript/choiceTree'
 import { AstCanvas } from './graph/AstCanvas'
 import { GameSettingsPanel } from './project/GameSettingsPanel'
 import { Tutorial } from './tutorial/Tutorial'
+import { LessonPanel } from './tutorial/LessonPanel'
 import { lineTints } from './choicescript/ast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { normalizeIndentation } from './choicescript/indent'
@@ -82,6 +83,9 @@ export default function App() {
   // Interactive tutorial (auto-offered on first run, replayable via 🎓).
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [canvasGameMode, setCanvasGameMode] = useState(false)
+  // Build-a-game tutorial: lesson index (-1 = closed), persisted per user.
+  const [learnOpen, setLearnOpen] = useState(false)
+  const [lessonIdx, setLessonIdx] = useState(-1)
   // In-app updates: checked once shortly after boot against GitHub Releases.
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [updatePct, setUpdatePct] = useState<number | null>(null)
@@ -114,6 +118,18 @@ export default function App() {
   const closeTutorial = useCallback(() => {
     localStorage.setItem('cside-tutorial-seen', '1')
     setTutorialOpen(false)
+  }, [])
+
+  const setLesson = useCallback((i: number) => {
+    if (i < 0) {
+      // Finished — clear progress so a fresh run starts at lesson 1.
+      localStorage.removeItem('cside-lesson-idx')
+      setLessonIdx(-1)
+      setStatus('Tutorial complete — happy writing! 🎉')
+      return
+    }
+    localStorage.setItem('cside-lesson-idx', String(i))
+    setLessonIdx(i)
   }, [])
 
   // One update check shortly after boot (no-op in dev / offline).
@@ -377,6 +393,20 @@ export default function App() {
       setStatus(`Failed to load sample: ${(e as Error).message}`)
     }
   }, [openProjectData])
+
+  // Build-a-game course: open (creating on first use) the tutorial project,
+  // then resume wherever the learner left off.
+  const startLessons = useCallback(async () => {
+    setLearnOpen(false)
+    try {
+      const data = await window.cside.loadTutorial()
+      if (paths?.root !== data.root) openProjectData(data)
+      const saved = parseInt(localStorage.getItem('cside-lesson-idx') ?? '0', 10)
+      setLessonIdx(Number.isFinite(saved) && saved >= 0 ? saved : 0)
+    } catch (e) {
+      setStatus(`Tutorial failed to open: ${(e as Error).message}`)
+    }
+  }, [paths, openProjectData])
 
   // --- Booting the engine once both engine + project are ready ------------
   useEffect(() => {
@@ -917,7 +947,26 @@ export default function App() {
             <button className="tb-button" data-tut="tests" onClick={runTests}>QuickTest</button>
             <button className="tb-button" onClick={() => setRandomOpen(true)}>RandomTest</button>
             <button className="tb-button" onClick={exportGame}>Export…</button>
-            <button className="tb-button" title="Take the guided tour" onClick={() => setTutorialOpen(true)}>🎓</button>
+            <span className="learn-wrap">
+              <button className="tb-button" title="Learn the IDE and ChoiceScript" onClick={() => setLearnOpen((o) => !o)}>🎓</button>
+              {learnOpen && (
+                <span className="learn-pop" onMouseLeave={() => setLearnOpen(false)}>
+                  <button
+                    onClick={() => {
+                      setLearnOpen(false)
+                      setTutorialOpen(true)
+                    }}
+                  >
+                    Quick tour of the IDE
+                    <span className="learn-sub">2 minutes — where everything lives</span>
+                  </button>
+                  <button onClick={() => void startLessons()}>
+                    Build-a-game tutorial
+                    <span className="learn-sub">12 lessons — write a real mini-game, checked as you go</span>
+                  </button>
+                </span>
+              )}
+            </span>
           </>
         )}
         <span className="titlebar-sub">{paths ? paths.root : 'no project'}</span>
@@ -1177,6 +1226,10 @@ export default function App() {
           signals={{ activeScene, viewMode, gameMode: canvasGameMode, settingsOpen }}
           onClose={closeTutorial}
         />
+      )}
+
+      {lessonIdx >= 0 && project && (
+        <LessonPanel idx={lessonIdx} files={files} onIdx={setLesson} onClose={() => setLessonIdx(-1)} />
       )}
 
       {update && (

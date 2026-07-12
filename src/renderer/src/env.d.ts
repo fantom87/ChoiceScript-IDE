@@ -17,6 +17,7 @@ declare global {
       openProjectDialog: () => Promise<ProjectData | null>
       newProjectDialog: () => Promise<ProjectData | null>
       loadSample: () => Promise<ProjectData>
+      loadTutorial: () => Promise<ProjectData>
       loadProject: (root: string) => Promise<ProjectData>
       getLastProject: () => Promise<string | null>
       setLastProject: (root: string) => Promise<void>

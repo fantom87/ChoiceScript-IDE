@@ -1,6 +1,6 @@
 {
   "name": "cside",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "description": "ChoiceScript IDE — a dedicated editor for authoring ChoiceScript games",
   "main": "./out/main/index.js",
   "author": "",

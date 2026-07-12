@@ -28,6 +28,8 @@ const api = {
   newProjectDialog: (): Promise<ProjectData | null> => ipcRenderer.invoke('project:newDialog'),
   /** Load the bundled sample game (copied to a writable location). */
   loadSample: (): Promise<ProjectData> => ipcRenderer.invoke('project:loadSample'),
+  /** Load (creating on first use) the build-a-game tutorial project. */
+  loadTutorial: (): Promise<ProjectData> => ipcRenderer.invoke('project:loadTutorial'),
   /** Path of the most recently opened project, if any. */
   getLastProject: (): Promise<string | null> => ipcRenderer.invoke('app:getLastProject'),
   /** Remember the most recently opened project. */

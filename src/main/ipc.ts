@@ -137,6 +137,32 @@ export function registerIpc(): void {
     return loadProjectFromDir(root)
   })
 
+  // The build-a-game tutorial works on its own real project (in userData so
+  // no dialog is needed); created minimal on first use, preserved after.
+  ipcMain.handle('project:loadTutorial', async (): Promise<ProjectData> => {
+    const dest = join(app.getPath('userData'), 'tutorial-game')
+    const startupPath = join(dest, 'scenes', 'startup.txt')
+    if (!(await exists(startupPath))) {
+      await fs.mkdir(join(dest, 'scenes'), { recursive: true })
+      await fs.writeFile(
+        startupPath,
+        [
+          '*title My First Game',
+          '*author Your Name Here',
+          '*scene_list',
+          '  startup',
+          '',
+          'The lamp room smells of oil and cold brass. Somewhere below, the sea is arguing with the rocks again.',
+          '',
+          '*finish',
+          ''
+        ].join('\n'),
+        'utf8'
+      )
+    }
+    return loadProjectFromDir(dest)
+  })
+
   ipcMain.handle(
     'scene:write',
     async (_e, scenesDir: string, name: string, text: string): Promise<void> => {

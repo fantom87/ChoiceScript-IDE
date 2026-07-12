@@ -7,6 +7,19 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.44
+
+- Build-a-game tutorial: a 12-lesson course (🎓 → "Build-a-game tutorial")
+  where you write a real mini-game — "The Lighthouse Keeper" — from *title to
+  *ending: prose and page breaks, choices, labels and *goto convergence,
+  variables and ${…}, *if/*else and fairmath, nested choices, *fake_choice,
+  option modifiers, a second scene, the stats screen, achievements, and
+  testing/exporting. The IDE checks your actual code live as you type — Next
+  unlocks when the structure is really there — with a working example one
+  click away in every lesson. Progress is saved; the tutorial project lives
+  alongside your real ones.
+- The 🎓 button now offers both the quick UI tour and the full course.
+
 ## 0.0.43
 
 - Interactive tutorial: a guided spotlight tour of the whole IDE (editor,
