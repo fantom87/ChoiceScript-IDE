@@ -37,10 +37,23 @@ for (const f of fs.readdirSync(RELEASES)) {
 }
 
 // 2. The latest build lives in the MAIN project folder — replace the old one.
+// A locked file (the old exe is probably RUNNING) must not abort the archive:
+// warn and move on; everything is already safe in releases/<ver>/.
 for (const f of fs.readdirSync(ROOT)) {
-  if (/^ChoiceScript IDE-.*\.(exe|zip)$/i.test(f)) fs.rmSync(path.join(ROOT, f), { force: true })
+  if (!/^ChoiceScript IDE-.*\.(exe|zip)$/i.test(f)) continue
+  try {
+    fs.rmSync(path.join(ROOT, f), { force: true })
+  } catch (e) {
+    console.warn(`[archive] could not remove ${f} (in use?): ${e.message}`)
+  }
 }
-for (const f of present) fs.copyFileSync(path.join(DIST, f), path.join(ROOT, f))
+for (const f of present) {
+  try {
+    fs.copyFileSync(path.join(DIST, f), path.join(ROOT, f))
+  } catch (e) {
+    console.warn(`[archive] could not copy ${f} to project root (in use?): ${e.message}`)
+  }
+}
 
 // 3. Prune superseded builds from dist/ — releases/ is the permanent archive,
 //    so dist/ only needs the current version's artifacts.
