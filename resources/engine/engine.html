@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<!--
+  ChoiceScript IDE — engine host page.
+  Loaded inside a sandboxed <iframe> at app://engine/engine.html.
+  Runs the unmodified ChoiceScript engine and drives it via window.postMessage.
+
+  The ChoiceScript engine files in this directory are Copyright Dan Fabulich,
+  used under the ChoiceScript License v1.0 (see LICENSE.txt in the repo).
+-->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ChoiceScript Engine</title>
+
+<script>window.version = "IDE";</script>
+<script src="persist.js"></script>
+<script src="alertify.min.js"></script>
+<script src="util.js"></script>
+<link href="style.css" rel="stylesheet" type="text/css">
+<style id="dynamic"></style>
+<script src="seedrandom.js"></script>
+<script src="ui.js"></script>
+<script src="scene.js"></script>
+<script src="navigator.js"></script>
+<link href="alertify.css" rel="stylesheet" type="text/css">
+
+<script>
+// ---------------------------------------------------------------------------
+// IDE engine host glue. Runs after the engine scripts have defined their
+// globals (Scene, computeCookie, restoreGame, clearScreen, ...).
+// ---------------------------------------------------------------------------
+(function () {
+  "use strict";
+
+  // Disable the engine's own persistence + auto-boot. We manage state and
+  // booting ourselves via postMessage.
+  window.storeName = null;
+  window.alreadyLoaded = true; // suppress ui.js window.onload bootstrap
+  window.debug = false;
+  var rootDir = "";
+  window.rootDir = "";
+  Scene.baseUrl = ""; // scenes are served from the in-memory cache below
+
+  // In-memory scene cache: { sceneName: sourceText }.
+  window.__scenes = {};
+
+  function post(msg) {
+    try { parent.postMessage(msg, "*"); } catch (e) {}
+  }
+
+  function postError(message) {
+    var scene, line;
+    var m = /^(\w+) line (\d+): ([\s\S]*)$/.exec(String(message));
+    if (m) { scene = m[1]; line = parseInt(m[2], 10); }
+    post({ type: "ENGINE_ERROR", message: String(message), scene: scene, line: line });
+  }
+
+  // Route engine errors (thrown out of safeCall) to the IDE instead of alert().
+  window.reportError = function (msg) { postError(msg); };
+  window.onerror = function (message, source, lineno, colno, error) {
+    postError((error && error.message) ? error.message : message);
+    return true; // prevent default alert-y handling
+  };
+
+  // --- Scene text injection ("code injection") ---------------------------
+  // Serve every scene from the in-memory cache rather than fetching .txt.
+  Scene.prototype.loadScene = function loadScene() {
+    var text = window.__scenes[this.name];
+    if (typeof text !== "string") {
+      postError(this.name + " line 1: scene '" + this.name + "' not found (not in the current project buffers)");
+      text = "";
+    }
+    this.loadLines(text);
+    this.loaded = true;
+    if (this.executing) {
+      if (typeof doneLoading === "function") doneLoading();
+      this.execute();
+    }
+  };
+
+  // Push a *resumable* snapshot to the IDE at each pause point. Captured while
+  // this.lineNum still points at the *choice / *page_break line (before the
+  // printLoop post-increment), which is the only valid re-entry point.
+  function pushSnapshot(scene) {
+    try {
+      if (!scene) return;
+      var json = computeCookie(scene.stats, scene.temps, scene.lineNum, scene.indent);
+      post({ type: "STATE_SNAPSHOT", json: json, scene: scene.name, lineNum: scene.lineNum });
+    } catch (e) {}
+  }
+
+  var _renderOptions = Scene.prototype.renderOptions;
+  Scene.prototype.renderOptions = function (groups, options, callback) {
+    var r = _renderOptions.call(this, groups, options, callback);
+    pushSnapshot(this);
+    return r;
+  };
+
+  var _pageBreak = Scene.prototype.page_break;
+  Scene.prototype.page_break = function (buttonName) {
+    var r = _pageBreak.call(this, buttonName);
+    pushSnapshot(this);
+    return r;
+  };
+
+  // Tag rendered paragraphs with their source line so the IDE can highlight
+  // the code being hovered / played in the editor.
+  var _printLine = Scene.prototype.printLine;
+  Scene.prototype.printLine = function (line) {
+    if (!this.accumulatedParagraph || !this.accumulatedParagraph.length) {
+      window.__csParaLine = this.lineNum;
+      window.__csParaScene = this.name;
+    }
+    return _printLine.apply(this, arguments);
+  };
+  if (typeof window.printParagraph === "function") {
+    var _printParagraph = window.printParagraph;
+    window.printParagraph = function () {
+      var r = _printParagraph.apply(this, arguments);
+      try {
+        var textEl = document.getElementById("text");
+        var el = textEl && textEl.lastElementChild;
+        if (el && window.__csParaLine != null) {
+          el.setAttribute("data-cs-line", window.__csParaLine);
+          el.setAttribute("data-cs-scene", window.__csParaScene || "");
+        }
+      } catch (e) {}
+      return r;
+    };
+  }
+  document.addEventListener("mouseover", function (e) {
+    var el = e.target && e.target.closest ? e.target.closest("[data-cs-line]") : null;
+    if (el) {
+      post({
+        type: "HOVER",
+        scene: el.getAttribute("data-cs-scene") || undefined,
+        line: parseInt(el.getAttribute("data-cs-line"), 10)
+      });
+    }
+  });
+  document.addEventListener("mouseout", function (e) {
+    var el = e.target && e.target.closest ? e.target.closest("[data-cs-line]") : null;
+    if (el) post({ type: "HOVER_CLEAR" });
+  });
+
+  function currentScene() {
+    return (window.stats && window.stats.scene) || null;
+  }
+
+  function currentSnapshot() {
+    var sc = currentScene();
+    if (!sc) return null;
+    try {
+      return computeCookie(window.stats, sc.temps, sc.lineNum, sc.indent);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function postRendered() {
+    var sc = currentScene();
+    post({ type: "RENDERED", scene: sc ? sc.name : undefined });
+  }
+
+  // --- Message handlers ---------------------------------------------------
+  function loadGame(msg) {
+    window.__scenes = msg.scenes || {};
+    window.debug = !!msg.debug;
+    try {
+      // Generated mygame.js assigns globals `nav` and `stats` (indirect eval
+      // runs in global scope so the bare assignments become window globals).
+      (0, eval)(msg.mygameJs);
+    } catch (e) {
+      postError("startup line 1: failed to initialise game (" + (e && e.message) + ")");
+      return;
+    }
+    if (typeof nav !== "undefined") window.nav = nav;      // eslint-disable-line
+    if (typeof stats !== "undefined") window.stats = stats; // eslint-disable-line
+    if (!window.stats) window.stats = {};
+    window.main = document.getElementById("main");
+    if (window.nav && window.nav.setStartingStatsClone) {
+      window.nav.setStartingStatsClone(window.stats);
+    }
+    if (typeof loadPreferences === "function") {
+      try { loadPreferences(); } catch (e) {}
+    }
+    var startScene = msg.startScene ||
+      (window.nav && window.nav.getStartupScene ? window.nav.getStartupScene() : "startup");
+    window.stats.sceneName = startScene;
+    clearScreen(function () {
+      var scene = new Scene(startScene, window.stats, window.nav, { debugMode: window.debug });
+      safeCall(scene, scene.execute);
+      postRendered();
+    });
+  }
+
+  function setBuffers(msg) {
+    var scenes = msg.scenes || {};
+    for (var name in scenes) {
+      if (Object.prototype.hasOwnProperty.call(scenes, name)) {
+        window.__scenes[name] = scenes[name];
+      }
+    }
+  }
+
+  // Restart the current chapter from its entry point using the "backup" save
+  // (captured at scene entry with scene-entry stats). This is the engine's own
+  // mechanism for reloading a scene whose text changed, so it re-parses cleanly
+  // and never double-applies *set changes. Used for hot reload on edit.
+  function reloadChapter() {
+    var backup = window._global && window._global.pseudoSave
+      ? window._global.pseudoSave.backup
+      : (typeof pseudoSave !== "undefined" ? pseudoSave.backup : null);
+    var state = null;
+    if (backup) {
+      try { state = jsonParse(backup); } catch (e) { state = null; }
+    }
+    if (state && state.temps) { delete state.temps.choice_crc; }
+    clearScreen(function () {
+      try {
+        restoreGame(state);
+        postRendered();
+      } catch (e) {
+        postError((e && e.message) ? e.message : String(e));
+      }
+    });
+  }
+
+  function runFrom(msg) {
+    var state = null;
+    if (msg.state) {
+      try { state = jsonParse(msg.state); } catch (e) { state = null; }
+    }
+    // Neutralise the CRC "restart chapter" bounce (scene.js checkSum) so
+    // edited scenes hot-reload in place instead of jumping to a backup.
+    if (state && state.temps) { delete state.temps.choice_crc; }
+    window.debug = !!msg.debug || window.debug;
+    clearScreen(function () {
+      try {
+        restoreGame(
+          state,
+          msg.forcedScene || undefined,
+          false,
+          msg.forcedStats || undefined,
+          msg.forcedTemps || undefined
+        );
+        postRendered();
+      } catch (e) {
+        postError((e && e.message) ? e.message : String(e));
+      }
+    });
+  }
+
+  function onMessage(ev) {
+    var msg = ev.data;
+    if (!msg || typeof msg.type !== "string") return;
+    switch (msg.type) {
+      case "LOAD_GAME": loadGame(msg); break;
+      case "SET_BUFFERS": setBuffers(msg); break;
+      case "GET_SNAPSHOT": {
+        var sc = currentScene();
+        post({
+          type: "SNAPSHOT",
+          id: msg.id,
+          json: currentSnapshot(),
+          scene: sc ? sc.name : undefined,
+          lineNum: sc ? sc.lineNum : undefined
+        });
+        break;
+      }
+      case "RUN_FROM": runFrom(msg); break;
+      case "RELOAD": reloadChapter(); break;
+      default: break;
+    }
+  }
+
+  window.addEventListener("message", onMessage, false);
+
+  window.onload = function () {
+    window.main = document.getElementById("main");
+    post({ type: "ENGINE_READY" });
+  };
+})();
+</script>
+</head>
+<body>
+<div class="container" id="container1">
+  <div id="header">
+    <div id="identity">
+      <a href="#" id="email" style="display:none">you@example.com</a>
+      <a href="#" id="logout" style="display:none">Sign Out</a>
+    </div>
+    <h1 id="title" class="gameTitle"></h1>
+    <h2 id="author" class="gameTitle"></h2>
+    <p id="headerLinks"></p>
+    <p id="buttons">
+      <button id="statsButton" class="spacedLink" onclick="showStats()">Show Stats</button>
+      <button id="achievementsButton" onclick="showAchievements()" class="spacedLink" style="display:none">Achievements</button>
+      <button id="menuButton" onclick="showMenu()" class="spacedLink">Menu</button>
+    </p>
+  </div>
+  <div id="main">
+    <div id="text"></div>
+  </div>
+  <div id="mobileLinks" class="webOnly"></div>
+</div>
+</body>
+</html>

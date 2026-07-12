@@ -1,0 +1,32 @@
+appId: com.choicescript.ide
+productName: ChoiceScript IDE
+directories:
+  output: dist
+  buildResources: build
+# The renderer bundles its libraries (Monaco, Cytoscape, React), so no app
+# node_modules need shipping — just the built output.
+files:
+  - out/**
+asar: true
+# The engine + sample game are served by the app:// protocol / project loader,
+# so they must sit unpacked in the app's resources directory.
+extraResources:
+  - from: resources/engine
+    to: engine
+  - from: resources/sample-game
+    to: sample-game
+win:
+  target:
+    - target: portable
+    - target: zip
+  artifactName: ${productName}-${version}-${arch}.${ext}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+mac:
+  target:
+    - dmg
+    - zip
+linux:
+  target:
+    - AppImage
+    - tar.gz

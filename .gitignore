@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+
+# Generated: esbuild bundles of the headless test harnesses + their reports
+scripts/diagnose.cjs
+scripts/testLint.mjs
+scripts/testSaveStore.cjs
+diag-report.md
+diag-app-report.md
