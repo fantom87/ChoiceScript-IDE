@@ -7,6 +7,17 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.43
+
+- Interactive tutorial: a guided spotlight tour of the whole IDE (editor,
+  live game, node canvas, whole-game map, settings form, testing). Steps
+  auto-advance when you actually do the thing — switch to Nodes, tick Whole
+  game — and never block the app. Offered automatically on first run;
+  replayable any time from the 🎓 toolbar button.
+- `npm run check:game -- <folder>` — headless validator for any game folder:
+  AST round-trip, lint, the engine's branch-walking autotester, and prose
+  word counts.
+
 ## 0.0.42
 
 - In-app updates: the editor checks GitHub Releases shortly after launch and,

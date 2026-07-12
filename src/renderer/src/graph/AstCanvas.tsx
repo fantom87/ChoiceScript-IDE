@@ -786,6 +786,8 @@ interface AstCanvasProps {
   onTypeColors?: (patch: Record<string, string | undefined>) => void
   /** Start in whole-game mode (used by the headless render smoke test). */
   initialGameMode?: boolean
+  /** Fires when the whole-game toggle flips (the tutorial listens). */
+  onGameModeChange?: (on: boolean) => void
   /** Write a scene's regenerated text (any scene — enables game-mode edits). */
   onEditScene: (sceneName: string, newText: string) => void
   onJump: (line0: number, scene?: string) => void
@@ -846,6 +848,7 @@ function AstCanvasInner({
   typeColors,
   onTypeColors,
   initialGameMode = false,
+  onGameModeChange,
   onEditScene,
   onJump,
   onHoverRange,
@@ -883,6 +886,11 @@ function AstCanvasInner({
   const [gameMode, setGameMode] = useState(initialGameMode)
   const gameModeRef = useRef(gameMode)
   gameModeRef.current = gameMode
+  const gmChangeRef = useRef(onGameModeChange)
+  gmChangeRef.current = onGameModeChange
+  useEffect(() => {
+    gmChangeRef.current?.(gameMode)
+  }, [gameMode])
   // Edge stroke width adapts to zoom so connections stay visible zoomed out
   // (and in whole-map exports, which capture at low zoom).
   const [edgeW, setEdgeW] = useState(2)
@@ -2218,7 +2226,7 @@ function AstCanvasInner({
           <div className="an-panel">
             <div className="an-indent">
               {files && (
-                <label className="rf-toggle" style={{ border: 0, padding: 0, background: 'transparent' }}>
+                <label className="rf-toggle" data-tut="wholegame" style={{ border: 0, padding: 0, background: 'transparent' }}>
                   <input type="checkbox" checked={gameMode} onChange={(e) => setGameMode(e.target.checked)} />
                   Whole game
                 </label>

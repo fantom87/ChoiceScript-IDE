@@ -55,6 +55,7 @@ import { isNewerVersion, pickUpdate } from '../src/shared/update'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { AstCanvas } from '../src/renderer/src/graph/AstCanvas'
+import { Tutorial, TUTORIAL_STEPS } from '../src/renderer/src/tutorial/Tutorial'
 import type { SavePoint } from '../src/shared/types'
 
 interface Result {
@@ -356,6 +357,29 @@ async function main(): Promise<void> {
       }
     }
     return `${laid.length} nodes placed, ${routes.size} orthogonal routes`
+  })
+  await check('Logic', 'tutorial steps are well-formed + render headlessly', () => {
+    const ids = new Set<string>()
+    for (const s of TUTORIAL_STEPS) {
+      assert(!!s.id && !ids.has(s.id), `duplicate/empty step id: ${s.id}`)
+      ids.add(s.id)
+      assert(s.title.length > 0 && s.body.length > 20, `step ${s.id} lacks title/body`)
+      assert(!s.advance || !!s.action, `step ${s.id} auto-advances but gives no action hint`)
+    }
+    assert(TUTORIAL_STEPS.length >= 8, 'tour suspiciously short')
+    assert(!TUTORIAL_STEPS[0].target, 'first step should be a centred welcome card')
+    // Every step (spotlit and centred) must render server-side without crashing.
+    const signals = { activeScene: 'startup', viewMode: 'live' as const, gameMode: false, settingsOpen: false }
+    const html = renderToString(createElement(Tutorial, { signals, onClose: () => {} }))
+    assert(html.includes('tut-card') && html.includes('Welcome'), 'tutorial card did not render')
+    // Auto-advance predicates fire on the states they watch.
+    const s2 = TUTORIAL_STEPS.find((s) => s.id === 'scenes')!
+    assert(s2.advance!({ ...signals, activeScene: 'crew' }, signals), 'scene-change advance broken')
+    const s5 = TUTORIAL_STEPS.find((s) => s.id === 'nodes-switch')!
+    assert(s5.advance!({ ...signals, viewMode: 'typed' }, signals), 'view-switch advance broken')
+    const s7 = TUTORIAL_STEPS.find((s) => s.id === 'wholegame')!
+    assert(s7.advance!({ ...signals, gameMode: true }, signals), 'game-mode advance broken')
+    return `${TUTORIAL_STEPS.length} steps valid; SSR renders; advance predicates fire`
   })
   await check('Logic', 'update check picks newer releases correctly', () => {
     assert(isNewerVersion('0.0.41', 'v0.0.42'), '0.0.42 should be newer than 0.0.41')

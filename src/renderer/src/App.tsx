@@ -22,6 +22,7 @@ import { ChoiceTreePanel } from './preview/ChoiceTreePanel'
 import { parseChoiceTree } from './choicescript/choiceTree'
 import { AstCanvas } from './graph/AstCanvas'
 import { GameSettingsPanel } from './project/GameSettingsPanel'
+import { Tutorial } from './tutorial/Tutorial'
 import { lineTints } from './choicescript/ast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { normalizeIndentation } from './choicescript/indent'
@@ -78,6 +79,9 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [renaming, setRenaming] = useState<{ kind: 'variable' | 'label'; oldName: string; scene: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  // Interactive tutorial (auto-offered on first run, replayable via 🎓).
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+  const [canvasGameMode, setCanvasGameMode] = useState(false)
   // In-app updates: checked once shortly after boot against GitHub Releases.
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
   const [updatePct, setUpdatePct] = useState<number | null>(null)
@@ -99,6 +103,18 @@ export default function App() {
     if (!paths) return null
     return buildProject({ root: paths.root, scenesDir: paths.scenesDir, files })
   }, [paths, files])
+
+  // First run: offer the tour once a project is actually on screen.
+  useEffect(() => {
+    if (!project) return
+    if (localStorage.getItem('cside-tutorial-seen')) return
+    const t = setTimeout(() => setTutorialOpen(true), 1200)
+    return () => clearTimeout(t)
+  }, [project])
+  const closeTutorial = useCallback(() => {
+    localStorage.setItem('cside-tutorial-seen', '1')
+    setTutorialOpen(false)
+  }, [])
 
   // One update check shortly after boot (no-op in dev / offline).
   useEffect(() => {
@@ -897,10 +913,11 @@ export default function App() {
             <button className="tb-button" onClick={() => setCreatingScene(true)}>New Scene</button>
             <InsertMenu onInsert={(snip) => editorRef.current?.insertSnippet(snip)} />
             <button className="tb-button" onClick={() => setFindOpen((o) => !o)}>Find</button>
-            <button className="tb-button" onClick={() => setSettingsOpen(true)}>⚙ Game</button>
-            <button className="tb-button" onClick={runTests}>QuickTest</button>
+            <button className="tb-button" data-tut="settings" onClick={() => setSettingsOpen(true)}>⚙ Game</button>
+            <button className="tb-button" data-tut="tests" onClick={runTests}>QuickTest</button>
             <button className="tb-button" onClick={() => setRandomOpen(true)}>RandomTest</button>
             <button className="tb-button" onClick={exportGame}>Export…</button>
+            <button className="tb-button" title="Take the guided tour" onClick={() => setTutorialOpen(true)}>🎓</button>
           </>
         )}
         <span className="titlebar-sub">{paths ? paths.root : 'no project'}</span>
@@ -1062,6 +1079,7 @@ export default function App() {
                 sceneList={project?.sceneList ?? []}
                 problems={activeDiagnostics}
                 variables={sceneVariables}
+                onGameModeChange={setCanvasGameMode}
                 onNewScene={(name) => void createSceneByName(name, false)}
                 typeColors={config.typeColors}
                 onTypeColors={(patch) =>
@@ -1153,6 +1171,13 @@ export default function App() {
       )}
 
       <ProblemsPanel problems={allProblems} onSelect={jumpToProblem} />
+
+      {tutorialOpen && (
+        <Tutorial
+          signals={{ activeScene, viewMode, gameMode: canvasGameMode, settingsOpen }}
+          onClose={closeTutorial}
+        />
+      )}
 
       {update && (
         <div className="update-banner">

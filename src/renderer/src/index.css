@@ -1854,6 +1854,82 @@ body {
   color: var(--fg-dim);
 }
 
+/* Interactive tutorial (spotlight tour) */
+.tut-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+.tut-spot {
+  position: fixed;
+  border-radius: 8px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  outline: 2px solid #f2c46d;
+  transition: all 0.25s ease;
+}
+.tut-dim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+.tut-card {
+  position: fixed;
+  pointer-events: auto;
+  background: #252526;
+  border: 1px solid #4d4d52;
+  border-radius: 8px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  font-size: 13px;
+  color: var(--fg);
+}
+.tut-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.tut-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #f2c46d;
+}
+.tut-x {
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+.tut-body {
+  line-height: 1.55;
+  color: var(--fg);
+}
+.tut-action {
+  margin-top: 8px;
+  color: #4ec9b0;
+  font-weight: 600;
+}
+.tut-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+}
+.tut-count {
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.tut-btns {
+  display: flex;
+  gap: 8px;
+}
+.tut-next {
+  background: #3d5a3f;
+}
+
 /* Update banner (bottom-right, above the status bar) */
 .update-banner {
   position: fixed;
