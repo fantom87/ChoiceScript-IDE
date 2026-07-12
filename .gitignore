@@ -6,6 +6,7 @@ dist/
 
 # Generated: esbuild bundles of the headless test harnesses + their reports
 scripts/diagnose.cjs
+scripts/checkGame.cjs
 scripts/testLint.mjs
 scripts/testSaveStore.cjs
 diag-report.md
