@@ -8,6 +8,7 @@ import { Welcome } from './project/Welcome'
 import { RandomTestPanel } from './project/RandomTestPanel'
 import { runRandomTest, parseRandomResults } from './choicescript/randomTest'
 import type { SavePoint } from '../../shared/types'
+import type { UpdateInfo } from '../../shared/update'
 import { buildProject } from './project/projectModel'
 import { generateMygameJs } from './choicescript/mygameGen'
 import { buildChoiceScriptIndex } from './choicescript/analyze'
@@ -77,6 +78,10 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [renaming, setRenaming] = useState<{ kind: 'variable' | 'label'; oldName: string; scene: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  // In-app updates: checked once shortly after boot against GitHub Releases.
+  const [update, setUpdate] = useState<UpdateInfo | null>(null)
+  const [updatePct, setUpdatePct] = useState<number | null>(null)
+  const [updateErr, setUpdateErr] = useState<string | null>(null)
   const currentStateRef = useRef<{ json: string; scene?: string; lineNum?: number } | null>(null)
   const autosaveRef = useRef(autosave)
   autosaveRef.current = autosave
@@ -94,6 +99,31 @@ export default function App() {
     if (!paths) return null
     return buildProject({ root: paths.root, scenesDir: paths.scenesDir, files })
   }, [paths, files])
+
+  // One update check shortly after boot (no-op in dev / offline).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      window.cside
+        .updateCheck()
+        .then((u) => setUpdate(u))
+        .catch(() => {})
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [])
+
+  const applyUpdate = useCallback(() => {
+    if (!update) return
+    setUpdateErr(null)
+    setUpdatePct(0)
+    const off = window.cside.onUpdateProgress(setUpdatePct)
+    window.cside
+      .updateApply(update)
+      .catch((e) => {
+        setUpdateErr((e as Error).message ?? String(e))
+        setUpdatePct(null)
+      })
+      .finally(off)
+  }, [update])
 
   // Keep the editor's completion index in sync with the project.
   useEffect(() => {
@@ -1123,6 +1153,27 @@ export default function App() {
       )}
 
       <ProblemsPanel problems={allProblems} onSelect={jumpToProblem} />
+
+      {update && (
+        <div className="update-banner">
+          {updatePct === null ? (
+            <>
+              <span className="update-title">⬆ Version {update.version} is available</span>
+              <button className="header-btn" onClick={applyUpdate}>
+                Update &amp; restart
+              </button>
+              <button className="header-btn" onClick={() => setUpdate(null)} title="Not now">
+                ✕
+              </button>
+            </>
+          ) : (
+            <span className="update-title">
+              {updatePct < 100 ? `Downloading v${update.version}… ${updatePct}%` : 'Restarting into the new version…'}
+            </span>
+          )}
+          {updateErr && <span className="update-err">{updateErr}</span>}
+        </div>
+      )}
 
       <footer className="statusbar">
         <span className="statusbar-status">{status}</span>

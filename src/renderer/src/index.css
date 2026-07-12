@@ -1854,6 +1854,30 @@ body {
   color: var(--fg-dim);
 }
 
+/* Update banner (bottom-right, above the status bar) */
+.update-banner {
+  position: fixed;
+  right: 14px;
+  bottom: 34px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #2d3b2f;
+  border: 1px solid #4d7a52;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+.update-banner .update-title {
+  font-weight: 600;
+}
+.update-banner .update-err {
+  color: #f48771;
+}
+
 /* Status bar */
 .statusbar {
   flex: 0 0 auto;

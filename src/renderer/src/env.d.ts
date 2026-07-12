@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { ProjectData, SavePoint, IdeConfig } from '../../shared/types'
+import type { UpdateInfo } from '../../shared/update'
 
 export {}
 
@@ -37,6 +38,9 @@ declare global {
       }) => Promise<string | null>
       exportImagePath: (defaultName: string) => Promise<string | null>
       exportImageWrite: (filePath: string, dataUrl: string) => Promise<void>
+      updateCheck: () => Promise<UpdateInfo | null>
+      updateApply: (info: UpdateInfo) => Promise<string>
+      onUpdateProgress: (cb: (pct: number) => void) => () => void
     }
   }
 }

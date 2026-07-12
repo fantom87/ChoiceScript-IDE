@@ -7,6 +7,15 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.42
+
+- In-app updates: the editor checks GitHub Releases shortly after launch and,
+  when a newer version exists, shows an update banner. One click downloads the
+  new portable exe (with progress), launches it and closes the old one.
+  Dismissible; silent when offline or up to date.
+- `npm run release` publishes the current version's portable exe + zip as a
+  GitHub Release, with notes pulled from this changelog.
+
 ## 0.0.41
 
 - Goto fan-ins merge too: every `*goto` converging on the same label now shares

@@ -7,6 +7,8 @@ import * as saveStore from './saveStore'
 import { buildStandaloneHtml } from './exportHtml'
 import type { ExportOptions } from './exportHtml'
 import { scaffoldProject } from './scaffold'
+import { checkForUpdate, downloadAndInstall } from './updater'
+import type { UpdateInfo } from '../shared/update'
 
 function engineDir(): string {
   return app.isPackaged
@@ -214,6 +216,15 @@ export function registerIpc(): void {
   ipcMain.handle('config:write', async (_e, root: string, config: IdeConfig): Promise<void> => {
     await fs.mkdir(join(root, '.cside'), { recursive: true })
     await fs.writeFile(configFile(root), JSON.stringify(config, null, 2), 'utf8')
+  })
+
+  // --- In-app updates (GitHub Releases) ------------------------------------
+  ipcMain.handle('update:check', (): Promise<UpdateInfo | null> => checkForUpdate())
+  ipcMain.handle('update:apply', async (event, info: UpdateInfo): Promise<string> => {
+    const wc = event.sender
+    return downloadAndInstall(info, (pct) => {
+      if (!wc.isDestroyed()) wc.send('update:progress', pct)
+    })
   })
 
   // --- Diagnostic mode -----------------------------------------------------

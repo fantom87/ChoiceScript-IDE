@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { ProjectData, SavePoint, IdeConfig } from '../shared/types'
+import type { UpdateInfo } from '../shared/update'
 
 /**
  * The typed API surface exposed to the renderer as `window.cside`.
@@ -66,7 +67,17 @@ const api = {
     ipcRenderer.invoke('export:imagePath', defaultName),
   /** Write a captured data-URL image to the chosen path. */
   exportImageWrite: (filePath: string, dataUrl: string): Promise<void> =>
-    ipcRenderer.invoke('export:imageWrite', filePath, dataUrl)
+    ipcRenderer.invoke('export:imageWrite', filePath, dataUrl),
+  /** Ask GitHub Releases whether a newer version exists (null = up to date). */
+  updateCheck: (): Promise<UpdateInfo | null> => ipcRenderer.invoke('update:check'),
+  /** Download the new portable exe, launch it and quit this instance. */
+  updateApply: (info: UpdateInfo): Promise<string> => ipcRenderer.invoke('update:apply', info),
+  /** Subscribe to download progress (0–100). Returns an unsubscribe fn. */
+  onUpdateProgress: (cb: (pct: number) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, pct: number): void => cb(pct)
+    ipcRenderer.on('update:progress', handler)
+    return () => ipcRenderer.removeListener('update:progress', handler)
+  }
 }
 
 export type CsideApi = typeof api

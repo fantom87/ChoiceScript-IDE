@@ -51,6 +51,7 @@ import {
 import { buildChoiceGraph, connectNodes, buildGameGraph } from '../src/renderer/src/graph/astGraph'
 import { routeCross, routeInterior, routeTrunk, pointsToPath, pathHitsRect } from '../src/renderer/src/graph/edgeRouting'
 import { layoutWith, layoutWithElk, GRID_COLS } from '../src/renderer/src/graph/canvasLayout'
+import { isNewerVersion, pickUpdate } from '../src/shared/update'
 import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { AstCanvas } from '../src/renderer/src/graph/AstCanvas'
@@ -355,6 +356,27 @@ async function main(): Promise<void> {
       }
     }
     return `${laid.length} nodes placed, ${routes.size} orthogonal routes`
+  })
+  await check('Logic', 'update check picks newer releases correctly', () => {
+    assert(isNewerVersion('0.0.41', 'v0.0.42'), '0.0.42 should be newer than 0.0.41')
+    assert(isNewerVersion('0.0.9', '0.0.10'), 'numeric compare, not string compare')
+    assert(isNewerVersion('0.0.41', 'v0.1.0'), 'minor bump is newer')
+    assert(!isNewerVersion('0.0.41', 'v0.0.41'), 'same version is not an update')
+    assert(!isNewerVersion('0.1.0', 'v0.0.99'), 'older is not an update')
+    const release = {
+      tag_name: 'v0.0.42',
+      body: 'notes here',
+      assets: [
+        { name: 'ChoiceScript IDE-0.0.42-x64.zip', browser_download_url: 'https://x/z.zip', size: 2 },
+        { name: 'ChoiceScript IDE-0.0.42-portable.exe', browser_download_url: 'https://x/p.exe', size: 1 }
+      ]
+    }
+    const info = pickUpdate('0.0.41', release)
+    assert(!!info && info.version === '0.0.42', 'should pick the update')
+    assert(info!.name.endsWith('portable.exe') && info!.url === 'https://x/p.exe', 'must pick the portable exe asset')
+    assert(pickUpdate('0.0.42', release) === null, 'same version → no update')
+    assert(pickUpdate('0.0.41', { tag_name: 'v0.0.42', assets: [] }) === null, 'no exe asset → no update')
+    return 'version compare + portable-exe asset selection behave'
   })
   await check('Logic', 'convergent fan-in merges into a shared trunk', () => {
     // Three sources converge on one target: every clear route must share the
