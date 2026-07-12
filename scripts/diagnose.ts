@@ -56,7 +56,8 @@ import { createElement } from 'react'
 import { renderToString } from 'react-dom/server'
 import { AstCanvas } from '../src/renderer/src/graph/AstCanvas'
 import { Tutorial, TUTORIAL_STEPS } from '../src/renderer/src/tutorial/Tutorial'
-import { LESSONS, checkLesson } from '../src/renderer/src/tutorial/lessons'
+import { LESSONS, BASIC_FINAL, checkLesson, type Lesson } from '../src/renderer/src/tutorial/lessons'
+import { ADVANCED_LESSONS, checkAdvanced } from '../src/renderer/src/tutorial/advancedLessons'
 import type { SavePoint } from '../src/shared/types'
 
 interface Result {
@@ -383,36 +384,49 @@ async function main(): Promise<void> {
     return `${TUTORIAL_STEPS.length} steps valid; SSR renders; advance predicates fire`
   })
   await check('Logic', 'build-a-game lessons: demos pass, progression is real', () => {
-    assert(LESSONS.length === 12, `expected 12 lessons, got ${LESSONS.length}`)
-    for (let i = 0; i < LESSONS.length; i++) {
-      const l = LESSONS[i]
-      assert(l.body.length >= 1 && l.task.length > 10, `lesson ${l.id} lacks body/task`)
-      // The exemplar for each lesson must satisfy its own check…
-      const own = checkLesson(i, l.demo)
-      assert(own.pass, `lesson ${l.id}: its own demo fails its check — ${own.notes.join('; ')}`)
-      // …and every demo must be a REAL ChoiceScript stage: round-trip + lint clean.
-      const ctx2 = buildLintContext(l.demo, getSceneList(l.demo['startup'] ?? ''))
-      for (const s in l.demo) {
-        assert(
-          generateScene(parseScene(l.demo[s])) === l.demo[s].split(/\r?\n/).join('\n'),
-          `lesson ${l.id}: demo scene ${s} breaks round-trip`
-        )
-        const errs = lintScene(s, l.demo[s], ctx2).filter((d) => d.severity === 'error')
-        assert(errs.length === 0, `lesson ${l.id}: demo ${s} has lint errors: ${errs[0]?.message}`)
-      }
-      // Each lesson (except the last) must demand something the PREVIOUS
-      // stage doesn't already satisfy — otherwise it teaches nothing new.
-      if (i > 0 && i < LESSONS.length - 1) {
-        const prev = checkLesson(i, LESSONS[i - 1].demo)
-        assert(!prev.pass, `lesson ${l.id} is already satisfied by the previous stage`)
+    const verifyCourse = (
+      name: string,
+      lessons: Lesson[],
+      checkAt: (i: number, files: Record<string, string>) => { pass: boolean; notes: string[] },
+      skipLastProgression: boolean,
+      predecessor?: Record<string, string>
+    ): void => {
+      for (let i = 0; i < lessons.length; i++) {
+        const l = lessons[i]
+        assert(l.body.length >= 1 && l.task.length > 10, `${name}/${l.id} lacks body/task`)
+        // The exemplar for each lesson must satisfy its own check…
+        const own = checkAt(i, l.demo)
+        assert(own.pass, `${name}/${l.id}: its own demo fails its check — ${own.notes.join('; ')}`)
+        // …and every demo must be a REAL ChoiceScript stage: round-trip + lint clean.
+        const ctx2 = buildLintContext(l.demo, getSceneList(l.demo['startup'] ?? ''))
+        for (const s in l.demo) {
+          assert(
+            generateScene(parseScene(l.demo[s])) === l.demo[s].split(/\r?\n/).join('\n'),
+            `${name}/${l.id}: demo scene ${s} breaks round-trip`
+          )
+          const errs = lintScene(s, l.demo[s], ctx2).filter((d) => d.severity === 'error')
+          assert(errs.length === 0, `${name}/${l.id}: demo ${s} has lint errors: ${errs[0]?.message}`)
+        }
+        // Each lesson must demand something the PREVIOUS stage doesn't
+        // already satisfy — otherwise it teaches nothing new.
+        const prevDemo = i > 0 ? lessons[i - 1].demo : predecessor
+        if (prevDemo && !(skipLastProgression && i === lessons.length - 1)) {
+          assert(!checkAt(i, prevDemo).pass, `${name}/${l.id} is already satisfied by the previous stage`)
+        }
       }
     }
+    assert(LESSONS.length === 12, `expected 12 basic lessons, got ${LESSONS.length}`)
+    assert(ADVANCED_LESSONS.length === 10, `expected 10 advanced lessons, got ${ADVANCED_LESSONS.length}`)
+    // Basic: lesson 12 (ship) is legitimately satisfied by stage 11's game.
+    verifyCourse('basic', LESSONS, checkLesson, true)
+    // Advanced: continues from the finished basic game, every lesson new.
+    verifyCourse('advanced', ADVANCED_LESSONS, checkAdvanced, false, BASIC_FINAL)
     // The fresh tutorial scaffold must fail lesson 1 (placeholders present).
     const fresh = {
       startup: '*title My First Game\n*author Your Name Here\n*scene_list\n  startup\n\nSome text.\n\n*finish\n'
     }
     assert(!checkLesson(0, fresh).pass, 'the untouched scaffold should not pass lesson 1')
-    return `${LESSONS.length} lessons: demos valid + lint-clean, progression enforced`
+    return `${LESSONS.length} basic + ${ADVANCED_LESSONS.length} advanced: demos valid + lint-clean, progression enforced`
   })
   await check('Logic', 'update check picks newer releases correctly', () => {
     assert(isNewerVersion('0.0.41', 'v0.0.42'), '0.0.42 should be newer than 0.0.41')

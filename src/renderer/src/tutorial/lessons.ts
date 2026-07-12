@@ -39,7 +39,7 @@ export interface Lesson {
 
 // --- AST helpers -------------------------------------------------------------
 
-function walk(ast: AstNode[], fn: (n: AstNode, ancestors: AstNode[]) => void, ancestors: AstNode[] = []): void {
+export function walk(ast: AstNode[], fn: (n: AstNode, ancestors: AstNode[]) => void, ancestors: AstNode[] = []): void {
   for (const n of ast) {
     fn(n, ancestors)
     if (n.type === 'choice' || n.type === 'option' || n.type === 'if') {
@@ -48,7 +48,7 @@ function walk(ast: AstNode[], fn: (n: AstNode, ancestors: AstNode[]) => void, an
   }
 }
 
-function commands(ast: AstNode[], name: string): CommandNode[] {
+export function commands(ast: AstNode[], name: string): CommandNode[] {
   const out: CommandNode[] = []
   walk(ast, (n) => {
     if (n.type === 'command' && n.name === name) out.push(n)
@@ -70,7 +70,7 @@ function paragraphs(ast: AstNode[]): number {
   return count
 }
 
-function lintErrors(files: Record<string, string>, scene: string): string[] {
+export function lintErrors(files: Record<string, string>, scene: string): string[] {
   if (files[scene] === undefined) return []
   const ctx = buildLintContext(files, getSceneList(files['startup'] ?? ''))
   return lintScene(scene, files[scene], ctx)
@@ -78,7 +78,7 @@ function lintErrors(files: Record<string, string>, scene: string): string[] {
     .map((d) => `line ${d.line + 1}: ${d.message}`)
 }
 
-function result(requirements: [boolean, string][], lintNotes: string[] = []): LessonResult {
+export function result(requirements: [boolean, string][], lintNotes: string[] = []): LessonResult {
   const notes = requirements.filter(([ok]) => !ok).map(([, msg]) => msg)
   notes.push(...lintNotes.map((e) => `fix this error — ${e}`))
   return { pass: notes.length === 0, notes }
@@ -333,6 +333,13 @@ The keeper, as the log records them.
 *stat_chart
   percent courage Courage
 `
+
+/** The finished basic-course game — the advanced course builds on it. */
+export const BASIC_FINAL: Record<string, string> = {
+  startup: S11_STARTUP,
+  beacon: BEACON,
+  choicescript_stats: STATS
+}
 
 const demo = (startup: string, extra: Record<string, string> = {}): Record<string, string> => ({
   startup,

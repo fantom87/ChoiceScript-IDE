@@ -4,14 +4,27 @@
  * code really does the thing; "Show example" reveals that lesson's demo.
  */
 import { useMemo, useState } from 'react'
-import { LESSONS, checkLesson } from './lessons'
+import type { Lesson, LessonResult } from './lessons'
+
+function safeCheck(lesson: Lesson | undefined, files: Record<string, string>): LessonResult {
+  if (!lesson) return { pass: false, notes: ['unknown lesson'] }
+  try {
+    return lesson.check(files)
+  } catch (e) {
+    return { pass: false, notes: [`(the checker hit an error: ${(e as Error).message})`] }
+  }
+}
 
 export function LessonPanel({
+  lessons,
+  courseLabel,
   idx,
   files,
   onIdx,
   onClose
 }: {
+  lessons: Lesson[]
+  courseLabel: string
   idx: number
   files: Record<string, string>
   onIdx: (i: number) => void
@@ -19,15 +32,15 @@ export function LessonPanel({
 }): React.JSX.Element {
   const [collapsed, setCollapsed] = useState(false)
   const [showDemo, setShowDemo] = useState(false)
-  const lesson = LESSONS[Math.min(idx, LESSONS.length - 1)]
-  const res = useMemo(() => checkLesson(idx, files), [idx, files])
-  const last = idx === LESSONS.length - 1
+  const lesson = lessons[Math.min(idx, lessons.length - 1)]
+  const res = useMemo(() => safeCheck(lesson, files), [lesson, files])
+  const last = idx === lessons.length - 1
 
   return (
     <div className={`lesson-panel ${collapsed ? 'lesson-collapsed' : ''}`}>
       <div className="lesson-head" onClick={() => setCollapsed((c) => !c)}>
         <span className="lesson-crumb">
-          📖 Lesson {idx + 1}/{LESSONS.length}
+          📖 {courseLabel} {idx + 1}/{lessons.length}
         </span>
         <span className="lesson-title">{lesson.title}</span>
         <span className={`lesson-state ${res.pass ? 'ok' : ''}`}>{res.pass ? '✓' : '…'}</span>

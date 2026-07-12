@@ -24,6 +24,8 @@ import { AstCanvas } from './graph/AstCanvas'
 import { GameSettingsPanel } from './project/GameSettingsPanel'
 import { Tutorial } from './tutorial/Tutorial'
 import { LessonPanel } from './tutorial/LessonPanel'
+import { LESSONS } from './tutorial/lessons'
+import { ADVANCED_LESSONS } from './tutorial/advancedLessons'
 import { lineTints } from './choicescript/ast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { normalizeIndentation } from './choicescript/indent'
@@ -83,8 +85,9 @@ export default function App() {
   // Interactive tutorial (auto-offered on first run, replayable via 🎓).
   const [tutorialOpen, setTutorialOpen] = useState(false)
   const [canvasGameMode, setCanvasGameMode] = useState(false)
-  // Build-a-game tutorial: lesson index (-1 = closed), persisted per user.
+  // Build-a-game tutorials: course + lesson index (-1 = closed), persisted.
   const [learnOpen, setLearnOpen] = useState(false)
+  const [lessonCourse, setLessonCourse] = useState<'basic' | 'adv'>('basic')
   const [lessonIdx, setLessonIdx] = useState(-1)
   // In-app updates: checked once shortly after boot against GitHub Releases.
   const [update, setUpdate] = useState<UpdateInfo | null>(null)
@@ -120,17 +123,21 @@ export default function App() {
     setTutorialOpen(false)
   }, [])
 
-  const setLesson = useCallback((i: number) => {
-    if (i < 0) {
-      // Finished — clear progress so a fresh run starts at lesson 1.
-      localStorage.removeItem('cside-lesson-idx')
-      setLessonIdx(-1)
-      setStatus('Tutorial complete — happy writing! 🎉')
-      return
-    }
-    localStorage.setItem('cside-lesson-idx', String(i))
-    setLessonIdx(i)
-  }, [])
+  const lessonKey = lessonCourse === 'adv' ? 'cside-lesson-adv-idx' : 'cside-lesson-idx'
+  const setLesson = useCallback(
+    (i: number) => {
+      if (i < 0) {
+        // Finished — clear progress so a fresh run starts at lesson 1.
+        localStorage.removeItem(lessonKey)
+        setLessonIdx(-1)
+        setStatus('Tutorial complete — happy writing! 🎉')
+        return
+      }
+      localStorage.setItem(lessonKey, String(i))
+      setLessonIdx(i)
+    },
+    [lessonKey]
+  )
 
   // One update check shortly after boot (no-op in dev / offline).
   useEffect(() => {
@@ -394,19 +401,24 @@ export default function App() {
     }
   }, [openProjectData])
 
-  // Build-a-game course: open (creating on first use) the tutorial project,
-  // then resume wherever the learner left off.
-  const startLessons = useCallback(async () => {
-    setLearnOpen(false)
-    try {
-      const data = await window.cside.loadTutorial()
-      if (paths?.root !== data.root) openProjectData(data)
-      const saved = parseInt(localStorage.getItem('cside-lesson-idx') ?? '0', 10)
-      setLessonIdx(Number.isFinite(saved) && saved >= 0 ? saved : 0)
-    } catch (e) {
-      setStatus(`Tutorial failed to open: ${(e as Error).message}`)
-    }
-  }, [paths, openProjectData])
+  // Build-a-game courses: open (creating on first use) the tutorial project,
+  // then resume wherever the learner left off in the chosen course.
+  const startLessons = useCallback(
+    async (course: 'basic' | 'adv') => {
+      setLearnOpen(false)
+      try {
+        const data = await window.cside.loadTutorial()
+        if (paths?.root !== data.root) openProjectData(data)
+        const key = course === 'adv' ? 'cside-lesson-adv-idx' : 'cside-lesson-idx'
+        const saved = parseInt(localStorage.getItem(key) ?? '0', 10)
+        setLessonCourse(course)
+        setLessonIdx(Number.isFinite(saved) && saved >= 0 ? saved : 0)
+      } catch (e) {
+        setStatus(`Tutorial failed to open: ${(e as Error).message}`)
+      }
+    },
+    [paths, openProjectData]
+  )
 
   // --- Booting the engine once both engine + project are ready ------------
   useEffect(() => {
@@ -432,26 +444,65 @@ export default function App() {
   }, [engineReady, project, booted])
 
   // --- Editing ------------------------------------------------------------
-  const handleEdit = useCallback((text: string) => {
-    const scene = activeRef.current
-    if (!scene) return
-    setFiles((prev) => ({ ...prev, [scene]: text }))
-    setDirty((prev) => new Set(prev).add(scene))
+  // --- Live-pane reload policy ----------------------------------------------
+  // Auto (default): debounced hot reload on every edit. Off: edits queue up
+  // and the game only reloads on ↻ / Ctrl+S — calmer for long writing spells.
+  const [autoReload, setAutoReload] = useState(() => localStorage.getItem('cside-auto-reload') !== '0')
+  const autoReloadRef = useRef(autoReload)
+  autoReloadRef.current = autoReload
+  const pendingReload = useRef<Set<string>>(new Set())
+  const [reloadPending, setReloadPending] = useState(false)
 
-    if (reloadTimer.current) clearTimeout(reloadTimer.current)
-    reloadTimer.current = setTimeout(() => {
-      setErrors([])
-      lastEditRef.current = Date.now()
-      if (scene === 'startup') {
-        // Startup affects nav/stats/scene_list — full reboot from startup.
-        const latest = filesRef.current
-        const mygameJs = generateMygameJs(latest['startup'] ?? '', latest)
-        engineRef.current?.loadGame({ mygameJs, scenes: latest })
-      } else {
-        engineRef.current?.hotReload({ [scene]: text })
-      }
-    }, 300)
+  const flushReload = useCallback(() => {
+    const pend = pendingReload.current
+    if (!pend.size) return
+    setErrors([])
+    lastEditRef.current = Date.now()
+    const latest = filesRef.current
+    if (pend.has('startup')) {
+      // Startup affects nav/stats/scene_list — full reboot from startup.
+      engineRef.current?.loadGame({ mygameJs: generateMygameJs(latest['startup'] ?? '', latest), scenes: latest })
+    } else {
+      const changed: Record<string, string> = {}
+      for (const s of pend) changed[s] = latest[s] ?? ''
+      engineRef.current?.hotReload(changed)
+    }
+    pendingReload.current = new Set()
+    setReloadPending(false)
   }, [])
+
+  const queueReload = useCallback(
+    (sceneName: string) => {
+      pendingReload.current.add(sceneName)
+      if (autoReloadRef.current) {
+        if (reloadTimer.current) clearTimeout(reloadTimer.current)
+        reloadTimer.current = setTimeout(flushReload, 300)
+      } else {
+        setReloadPending(true)
+      }
+    },
+    [flushReload]
+  )
+
+  const toggleAutoReload = useCallback(
+    (on: boolean) => {
+      setAutoReload(on)
+      localStorage.setItem('cside-auto-reload', on ? '1' : '0')
+      if (on) flushReload() // apply anything that queued up while manual
+    },
+    [flushReload]
+  )
+
+  const handleEdit = useCallback(
+    (text: string) => {
+      const scene = activeRef.current
+      if (!scene) return
+      setFiles((prev) => ({ ...prev, [scene]: text }))
+      setDirty((prev) => new Set(prev).add(scene))
+      queueReload(scene)
+    },
+    [queueReload]
+  )
 
   // Canvas edits go through the editor's model (an undoable executeEdits), so
   // both editor typing and node-canvas edits share Monaco's per-scene undo
@@ -477,19 +528,9 @@ export default function App() {
       }
       setFiles((prev) => ({ ...prev, [sceneName]: text }))
       setDirty((prev) => new Set(prev).add(sceneName))
-      if (reloadTimer.current) clearTimeout(reloadTimer.current)
-      reloadTimer.current = setTimeout(() => {
-        setErrors([])
-        lastEditRef.current = Date.now()
-        if (sceneName === 'startup') {
-          const latest = filesRef.current
-          engineRef.current?.loadGame({ mygameJs: generateMygameJs(latest['startup'] ?? '', latest), scenes: latest })
-        } else {
-          engineRef.current?.hotReload({ [sceneName]: text })
-        }
-      }, 300)
+      queueReload(sceneName)
     },
-    [applyEditUndoable]
+    [applyEditUndoable, queueReload]
   )
 
   // Global undo/redo — works from the node canvas too, not just the editor.
@@ -892,6 +933,7 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         if (activeRef.current) saveScene(activeRef.current)
+        if (!autoReloadRef.current) flushReload() // manual mode: save = reload
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
@@ -900,7 +942,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [saveScene])
+  }, [saveScene, flushReload])
 
   useEffect(() => {
     return () => {
@@ -960,9 +1002,13 @@ export default function App() {
                     Quick tour of the IDE
                     <span className="learn-sub">2 minutes — where everything lives</span>
                   </button>
-                  <button onClick={() => void startLessons()}>
+                  <button onClick={() => void startLessons('basic')}>
                     Build-a-game tutorial
                     <span className="learn-sub">12 lessons — write a real mini-game, checked as you go</span>
+                  </button>
+                  <button onClick={() => void startLessons('adv')}>
+                    Advanced tutorial
+                    <span className="learn-sub">10 lessons — subroutines, arrays, input, hubs &amp; more</span>
                   </button>
                 </span>
               )}
@@ -1229,7 +1275,14 @@ export default function App() {
       )}
 
       {lessonIdx >= 0 && project && (
-        <LessonPanel idx={lessonIdx} files={files} onIdx={setLesson} onClose={() => setLessonIdx(-1)} />
+        <LessonPanel
+          lessons={lessonCourse === 'adv' ? ADVANCED_LESSONS : LESSONS}
+          courseLabel={lessonCourse === 'adv' ? 'Advanced' : 'Lesson'}
+          idx={lessonIdx}
+          files={files}
+          onIdx={setLesson}
+          onClose={() => setLessonIdx(-1)}
+        />
       )}
 
       {update && (
@@ -1297,6 +1350,22 @@ export default function App() {
           />
           Node colors
         </label>
+        <label
+          className="statusbar-follow"
+          title="Reload the live game as you type. Off: edits wait for ↻ or Ctrl+S — calmer for long writing sessions."
+        >
+          <input type="checkbox" checked={autoReload} onChange={(e) => toggleAutoReload(e.target.checked)} />
+          Auto-reload
+        </label>
+        {!autoReload && (
+          <button
+            className={`header-btn ${reloadPending ? 'reload-waiting' : ''}`}
+            title="Apply queued edits to the live game (Ctrl+S also reloads)"
+            onClick={flushReload}
+          >
+            ↻ Reload{reloadPending ? ' ●' : ''}
+          </button>
+        )}
         <span className="statusbar-problems">
           {allProblems.length
             ? `${allProblems.length} problem${allProblems.length > 1 ? 's' : ''}`

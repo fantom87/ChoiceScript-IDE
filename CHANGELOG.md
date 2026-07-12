@@ -7,6 +7,19 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.45
+
+- Advanced tutorial: a second 10-lesson course (🎓 menu) continuing the
+  lighthouse game into the deep end — subroutines (*gosub/*return),
+  parameters (*params), scene subroutine libraries (*gosub_scene),
+  multireplace @{…}, arrays + label loops, *rand, player input
+  (*input_text / $!{…}), investigation hubs with *disable_reuse,
+  opposed_pair stat bars, and implicit_control_flow. Same live code
+  validation as the basic course; progress tracked separately.
+- Auto-reload toggle (status bar): turn it off and the live game stops
+  refreshing while you type — edits queue up and apply on ↻ or Ctrl+S.
+  Calmer for long writing sessions; on by default.
+
 ## 0.0.44
 
 - Build-a-game tutorial: a 12-lesson course (🎓 → "Build-a-game tutorial")

@@ -1930,6 +1930,11 @@ body {
   background: #3d5a3f;
 }
 
+.reload-waiting {
+  background: #5a4a2d;
+  color: #f2c46d;
+}
+
 /* Build-a-game tutorial panel (docked bottom-right) */
 .lesson-panel {
   position: fixed;
