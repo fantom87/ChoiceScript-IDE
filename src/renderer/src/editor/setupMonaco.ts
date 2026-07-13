@@ -125,6 +125,7 @@ export function ensureMonacoSetup(): void {
 
   registerCompletion()
   registerCodeActions()
+  registerSpellCommand()
 }
 
 /** (Re)define the node-palette theme with custom type colours — called at
@@ -229,11 +230,37 @@ function registerCodeActions(): void {
           }
         } else if (code === 'mixed-indent') {
           replaceAction(marker, 'Convert indentation to spaces', mRange, token.replace(/\t/g, '  '))
+        } else if (code === 'spelling') {
+          // Suggestions + project dictionary, provided by the App via hooks.
+          for (const s of spellHooks.suggest(token).slice(0, 4)) {
+            replaceAction(marker, `Change to "${s}"`, mRange, s)
+          }
+          actions.push({
+            title: `Add "${token}" to the project dictionary`,
+            kind: 'quickfix',
+            diagnostics: [marker],
+            command: { id: ADD_TO_DICTIONARY, title: 'Add to dictionary', arguments: [token] }
+          })
         }
       }
 
       return { actions, dispose: () => {} }
     }
+  })
+}
+
+/** Spell hooks: wired by the App once the dictionary + config exist. */
+export const spellHooks: {
+  suggest: (word: string) => string[]
+  addWord: (word: string) => void
+} = {
+  suggest: () => [],
+  addWord: () => {}
+}
+const ADD_TO_DICTIONARY = 'cside.addToDictionary'
+function registerSpellCommand(): void {
+  monaco.editor.registerCommand(ADD_TO_DICTIONARY, (_accessor, word: string) => {
+    spellHooks.addWord(word)
   })
 }
 

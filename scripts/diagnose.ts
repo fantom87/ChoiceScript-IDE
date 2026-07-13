@@ -14,6 +14,8 @@ import { generateMygameJs, getSceneList } from '../src/renderer/src/choicescript
 import { listSaves, writeSave, deleteSave } from '../src/main/saveStore'
 import { snapshot, listSnapshots, readSnapshot } from '../src/main/historyStore'
 import { renameSceneRefs } from '../src/renderer/src/choicescript/sceneRename'
+import { extractProseWords, checkProse, maskLine } from '../src/renderer/src/choicescript/spell'
+import nspell from 'nspell'
 import { enumerateStats, buildIsolatedRun } from '../src/renderer/src/choicescript/stats'
 import { normalizeIndentation, detectIndentUnit } from '../src/renderer/src/choicescript/indent'
 import { insertIntoSceneList } from '../src/renderer/src/choicescript/sceneList'
@@ -481,6 +483,35 @@ async function main(): Promise<void> {
     assert(changed.old_name.includes('*gosub_scene fresh helper'), 'gosub_scene not renamed')
     assert(changed.ending.includes('*redirect_scene fresh'), 'redirect_scene not renamed')
     return 'scene_list + goto/gosub/redirect refs rewritten; prose + prefixes untouched'
+  })
+  await check('Logic', 'spellcheck: prose-only extraction + real dictionary', () => {
+    // Masking: commands vanish, option prose survives, ${}/@{}/[] stripped.
+    assert(maskLine('*set courage %+ 10') === null, 'command lines must be skipped')
+    assert(maskLine('  #Signal back.')!.includes('Signal back.'), 'option prose must survive')
+    const masked = maskLine('Hello ${name}, you look @{(x) grand|terrible} in [b]red[/b].')!
+    assert(!masked.includes('name') && !masked.includes('grand'), 'interpolations must be masked')
+    assert(masked.includes('Hello') && masked.includes('red'), 'surrounding prose must survive')
+    const words = extractProseWords('The lamp glows.\n*comment not prose\n  #An option here.')
+    assert(
+      words.some((w) => w.word === 'lamp') && words.some((w) => w.word === 'option'),
+      'extraction missed prose words'
+    )
+    assert(!words.some((w) => w.word === 'prose'), 'comment content must not be spellchecked')
+    // Real dictionary: a genuine typo is caught, real words are not, and the
+    // ignore list works.
+    const dict = nspell(
+      readFileSync(join(ROOT, 'node_modules', 'dictionary-en', 'index.aff'), 'utf8'),
+      readFileSync(join(ROOT, 'node_modules', 'dictionary-en', 'index.dic'), 'utf8')
+    )
+    const text = 'The lighthouse keeper reads the barometer.\n\nThe wether is foul tonight, Vexilla.'
+    const bad = checkProse(dict, text, new Set())
+    assert(!bad.some((m) => m.word === 'lighthouse'), 'real words must pass')
+    assert(bad.some((m) => m.word === 'Vexilla'), 'invented names should be flagged (until added)')
+    const withIgnore = checkProse(dict, text, new Set(['vexilla']))
+    assert(!withIgnore.some((m) => m.word === 'Vexilla'), 'project dictionary must suppress flags')
+    const sugg = dict.suggest('lighthose')
+    assert(sugg.length > 0, 'suggestions should exist for a near-miss')
+    return `masking + extraction + dictionary behave (e.g. lighthose → ${sugg[0]})`
   })
   await check('Logic', 'update check picks newer releases correctly', () => {
     assert(isNewerVersion('0.0.41', 'v0.0.42'), '0.0.42 should be newer than 0.0.41')
@@ -1127,6 +1158,22 @@ async function main(): Promise<void> {
     vm.runInContext(code, ctx, { filename: 'diag-autotest' })
     assert(!ctx.__autotestErr, `autotester errors:\n${ctx.__autotestErr}`)
     return 'all sample scenes pass'
+  })
+  await check('Engine', 'autotester reports unreached lines (coverage)', () => {
+    // A label no *goto ever targets → its lines must land in `uncovered`.
+    const dead = ['Reachable text.', '*finish', '*label orphan', 'Nobody comes here.', '*finish'].join('\n')
+    ctx.__dead = dead
+    ctx.__cov = null
+    vm.runInContext(
+      `var r = autotester(__dead, new SceneNavigator(['startup']), 'startup'); __cov = r && r[1];`,
+      ctx,
+      { filename: 'diag-coverage' }
+    )
+    const uncovered = ctx.__cov as unknown[]
+    assert(Array.isArray(uncovered) && uncovered.length > 0, 'no uncovered ranges reported')
+    const flat = uncovered.map(String).join(',')
+    assert(/3|4/.test(flat), `orphan label lines not in uncovered ranges: ${flat}`)
+    return `uncovered ranges: ${flat}`
   })
   await check('Engine', 'autotester catches fall-out-of-choice', () => {
     const bad = ['*choice', '  #A', '    text', '  #B', '    *finish'].join('\n')

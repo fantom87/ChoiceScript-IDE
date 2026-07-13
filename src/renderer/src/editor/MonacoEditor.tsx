@@ -43,9 +43,12 @@ interface MonacoEditorProps {
   onRename?: (word: string, lineText: string) => void
   /** The 1-based line under the mouse (null on leave) — for node-canvas sync. */
   onHoverLine?: (line: number | null) => void
+  /** Prose misspellings (1-based positions) — rendered as info squiggles. */
+  spelling?: { word: string; line: number; startCol: number; endCol: number }[]
 }
 
 const MARKER_OWNER = 'choicescript-lint'
+export const SPELL_OWNER = 'cside-spell'
 
 function severityOf(s: Diagnostic['severity']): monaco.MarkerSeverity {
   if (s === 'error') return monaco.MarkerSeverity.Error
@@ -90,7 +93,8 @@ export const MonacoEditor = forwardRef<MonacoEditorHandle, MonacoEditorProps>(
       onChange,
       onGotoDefinition,
       onRename,
-      onHoverLine
+      onHoverLine,
+      spelling
     },
     ref
   ) {
@@ -290,6 +294,28 @@ export const MonacoEditor = forwardRef<MonacoEditorHandle, MonacoEditorProps>(
       if (!model) return
       monaco.editor.setModelMarkers(model, MARKER_OWNER, toMarkers(diagnostics, model))
     }, [diagnostics, scene, value])
+
+    // Prose spelling as a separate marker family (blue info squiggles).
+    useEffect(() => {
+      const model = editorRef.current?.getModel()
+      if (!model) return
+      const lineCount = model.getLineCount()
+      monaco.editor.setModelMarkers(
+        model,
+        SPELL_OWNER,
+        (spelling ?? [])
+          .filter((s) => s.line >= 1 && s.line <= lineCount)
+          .map((s) => ({
+            severity: monaco.MarkerSeverity.Info,
+            startLineNumber: s.line,
+            startColumn: s.startCol,
+            endLineNumber: s.line,
+            endColumn: s.endCol,
+            message: `Unknown word: "${s.word}"`,
+            code: 'spelling'
+          }))
+      )
+    }, [spelling, scene, value])
 
     return <div ref={containerRef} className="monaco-host" />
   }

@@ -27,6 +27,10 @@ export interface IdeConfig {
   matchNodeColors?: boolean
   /** Custom node-type colours (canvas headers + option edges). */
   typeColors?: TypeColors
+  /** Prose spellcheck squiggles in the editor (default on). */
+  spellcheck?: boolean
+  /** Project dictionary: words the spellchecker should accept (lowercased). */
+  spellIgnore?: string[]
 }
 
 export const DEFAULT_CONFIG: IdeConfig = { indentStyle: 'space', indentWidth: 2, matchNodeColors: true }

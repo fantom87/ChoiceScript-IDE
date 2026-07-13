@@ -1934,6 +1934,21 @@ body {
   color: #6fbf73;
 }
 
+/* Coverage: nodes the autotester never reached */
+.react-flow__node.gn-unreached {
+  opacity: 0.45;
+  filter: saturate(0.5);
+}
+.sh-unreached {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #6b3a3a;
+  color: #f2c4c4;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .scene-rename {
   margin-left: auto;
   opacity: 0;

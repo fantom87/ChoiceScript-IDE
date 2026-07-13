@@ -6,6 +6,17 @@ declare module 'monaco-editor/esm/vs/editor/editor.api' {
   export * from 'monaco-editor'
 }
 
+// nspell ships no type declarations.
+declare module 'nspell' {
+  interface NSpell {
+    correct(word: string): boolean
+    suggest(word: string): string[]
+    add(word: string): NSpell
+  }
+  function nspell(aff: string, dic: string): NSpell
+  export default nspell
+}
+
 // cytoscape-dagre ships no type declarations.
 declare module 'cytoscape-dagre'
 // dagre (used directly for node-canvas layout).

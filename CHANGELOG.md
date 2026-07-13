@@ -7,6 +7,13 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.47
+
+- Prose spellcheck: blue squiggles on unknown words — prose only (commands,
+  ${…}, @{…}, [markup] and comments are never flagged; option text is).
+  Quick fixes offer dictionary suggestions and "Add to the project
+  dictionary" (stored per project). Toggle in the status bar.
+
 ## 0.0.46
 
 - Local file history: every save snapshots the previous version of the scene

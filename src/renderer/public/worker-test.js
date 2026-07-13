@@ -101,10 +101,13 @@ function run(files, sceneList) {
       const uncovered = result && result[1]
       if (uncovered && uncovered.length) {
         for (const range of uncovered) {
-          const line = parseInt(String(range).split(/[-,\s]/)[0], 10) || 1
+          const parts = String(range).split(/[-,\s]+/)
+          const line = parseInt(parts[0], 10) || 1
+          const endLine = parseInt(parts[1], 10) || line
           diagnostics.push({
             scene,
             line: line - 1,
+            endLine: endLine - 1,
             startCol: 1,
             endCol: 1,
             severity: 'info',

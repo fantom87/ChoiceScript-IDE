@@ -13,6 +13,8 @@ export interface Diagnostic {
   severity: Severity
   message: string
   code: string
+  /** 0-based inclusive end line for multi-line findings (coverage ranges). */
+  endLine?: number
   /** True for whole-project (execution-time) findings from the deep pass. */
   deferred?: boolean
 }

@@ -654,6 +654,14 @@ function SceneHeadNode({ data }: NodeProps<Node<NodeData>>) {
       title="Open this scene in the editor"
     >
       {g.title}
+      {(data.unreachedLines as number) > 0 && (
+        <span
+          className="sh-unreached"
+          title={`${data.unreachedLines as number} line(s) never reached during testing`}
+        >
+          ⚠ {data.unreachedLines as number}
+        </span>
+      )}
     </div>
   )
 }
@@ -788,6 +796,9 @@ interface AstCanvasProps {
   initialGameMode?: boolean
   /** Fires when the whole-game toggle flips (the tutorial listens). */
   onGameModeChange?: (on: boolean) => void
+  /** Coverage: unreached line ranges per scene (0-based inclusive), from the
+   *  deep pass — unreached nodes dim, scene titles show a ⚠ count. */
+  unreached?: Record<string, [number, number][]>
   /** Write a scene's regenerated text (any scene — enables game-mode edits). */
   onEditScene: (sceneName: string, newText: string) => void
   onJump: (line0: number, scene?: string) => void
@@ -849,6 +860,7 @@ function AstCanvasInner({
   onTypeColors,
   initialGameMode = false,
   onGameModeChange,
+  unreached,
   onEditScene,
   onJump,
   onHoverRange,
@@ -1773,6 +1785,29 @@ function AstCanvasInner({
   useEffect(() => {
     setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, lod: gameMode && lod } })))
   }, [lod, gameMode, setNodes])
+
+  // Coverage: dim nodes the autotester never reached; badge scene titles.
+  useEffect(() => {
+    const ranges = (own: string): [number, number][] => unreached?.[own] ?? []
+    const hit = (own: string, line: number): boolean =>
+      ranges(own).some(([a, b]) => line >= a && line <= b)
+    setNodes((nds) =>
+      nds.map((n) => {
+        const g = (n.data as NodeData | undefined)?.g
+        if (!g) return n
+        if (g.kind === 'scenehead') {
+          const count = ranges(g.ownScene ?? '').reduce((t, [a, b]) => t + (b - a + 1), 0)
+          if ((n.data as Record<string, unknown>).unreachedLines === count) return n
+          return { ...n, data: { ...n.data, unreachedLines: count } }
+        }
+        if (g.kind === 'stub') return n
+        const un = hit(g.ownScene ?? scene, g.startLine)
+        const base = (n.className ?? '').replace(/\s*gn-unreached/g, '')
+        const cls = un ? `${base} gn-unreached`.trim() : base
+        return cls === (n.className ?? '') ? n : { ...n, className: cls }
+      })
+    )
+  }, [unreached, built, scene, setNodes])
 
   // Re-colour option edges when the custom palette changes.
   useEffect(() => {

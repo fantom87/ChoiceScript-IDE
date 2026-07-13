@@ -32,6 +32,9 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { normalizeIndentation } from './choicescript/indent'
 import { insertIntoSceneList } from './choicescript/sceneList'
 import { renameSceneRefs, validSceneName } from './choicescript/sceneRename'
+import { checkProse, type Misspelling } from './choicescript/spell'
+import { getSpellDict } from './choicescript/spellDict'
+import { spellHooks } from './editor/setupMonaco'
 import { resolveDefinition, detectSymbol, renameVariable, renameLabel, replaceProject } from './choicescript/navigation'
 import { countProject } from './choicescript/wordCount'
 import { InsertMenu } from './editor/InsertMenu'
@@ -239,6 +242,18 @@ export default function App() {
     () => (activeScene ? parseChoiceTree(files[activeScene] ?? '') : []),
     [activeScene, files]
   )
+
+  // Coverage: unreached line ranges per scene, from the deep pass.
+  const unreachedByScene = useMemo(() => {
+    const map: Record<string, [number, number][]> = {}
+    for (const [scene, diags] of Object.entries(deepByScene)) {
+      for (const d of diags) {
+        if (d.code !== 'untested') continue
+        ;(map[scene] ??= []).push([d.line, d.endLine ?? d.line])
+      }
+    }
+    return map
+  }, [deepByScene])
 
   const words = useMemo(() => countProject(files), [files])
   // Session writing stats: project word count when this project was opened.
@@ -798,6 +813,45 @@ export default function App() {
     [paths]
   )
 
+  // --- Prose spellcheck ------------------------------------------------------
+  // Active scene only, debounced; the hunspell dictionary parses lazily once.
+  const [misspellings, setMisspellings] = useState<Misspelling[]>([])
+  useEffect(() => {
+    if (config.spellcheck === false || !activeScene) {
+      setMisspellings([])
+      return
+    }
+    const text = files[activeScene] ?? ''
+    const ignore = new Set((config.spellIgnore ?? []).map((w) => w.toLowerCase()))
+    const t = setTimeout(() => {
+      try {
+        setMisspellings(checkProse(getSpellDict(), text, ignore))
+      } catch {
+        setMisspellings([])
+      }
+    }, 700)
+    return () => clearTimeout(t)
+  }, [activeScene, files, config.spellcheck, config.spellIgnore])
+
+  // Quick-fix hooks: suggestions + "add to the project dictionary".
+  useEffect(() => {
+    spellHooks.suggest = (w) => {
+      try {
+        return getSpellDict().suggest(w)
+      } catch {
+        return []
+      }
+    }
+    spellHooks.addWord = (w) => {
+      try {
+        getSpellDict().add(w)
+      } catch {
+        /* dictionary not ready — the config entry still takes effect */
+      }
+      updateConfig({ spellIgnore: [...new Set([...(config.spellIgnore ?? []), w.toLowerCase()])] })
+    }
+  }, [config.spellIgnore, updateConfig])
+
   const normalizeIndent = useCallback(() => {
     const scene = activeRef.current
     if (!scene) return
@@ -1177,6 +1231,7 @@ export default function App() {
             onGotoDefinition={gotoDefinition}
             onRename={requestRename}
             onHoverLine={setHoverLine}
+            spelling={misspellings}
           />
         </section>
 
@@ -1249,6 +1304,7 @@ export default function App() {
                 problems={activeDiagnostics}
                 variables={sceneVariables}
                 onGameModeChange={setCanvasGameMode}
+                unreached={unreachedByScene}
                 onNewScene={(name) => void createSceneByName(name, false)}
                 typeColors={config.typeColors}
                 onTypeColors={(patch) =>
@@ -1439,6 +1495,17 @@ export default function App() {
             onChange={(e) => updateConfig({ matchNodeColors: e.target.checked })}
           />
           Node colors
+        </label>
+        <label
+          className="statusbar-follow"
+          title={`Prose spellcheck squiggles${misspellings.length ? ` (${misspellings.length} in this scene)` : ''}`}
+        >
+          <input
+            type="checkbox"
+            checked={config.spellcheck !== false}
+            onChange={(e) => updateConfig({ spellcheck: e.target.checked })}
+          />
+          Spelling
         </label>
         <label
           className="statusbar-follow"
