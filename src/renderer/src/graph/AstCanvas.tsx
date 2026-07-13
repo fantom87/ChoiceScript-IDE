@@ -799,6 +799,9 @@ interface AstCanvasProps {
   /** Coverage: unreached line ranges per scene (0-based inclusive), from the
    *  deep pass — unreached nodes dim, scene titles show a ⚠ count. */
   unreached?: Record<string, [number, number][]>
+  /** Playtest traversal heat (scene -> visits per 1-based line): hot nodes
+   *  glow amber, cold paths stay plain. Cleared from the Playtest panel. */
+  heat?: Record<string, number[]>
   /** Write a scene's regenerated text (any scene — enables game-mode edits). */
   onEditScene: (sceneName: string, newText: string) => void
   onJump: (line0: number, scene?: string) => void
@@ -861,6 +864,7 @@ function AstCanvasInner({
   initialGameMode = false,
   onGameModeChange,
   unreached,
+  heat,
   onEditScene,
   onJump,
   onHoverRange,
@@ -1787,10 +1791,26 @@ function AstCanvasInner({
   }, [lod, gameMode, setNodes])
 
   // Coverage: dim nodes the autotester never reached; badge scene titles.
+  // Playtest heat: tier nodes by traversal count (amber glow, 4 buckets).
   useEffect(() => {
     const ranges = (own: string): [number, number][] => unreached?.[own] ?? []
     const hit = (own: string, line: number): boolean =>
       ranges(own).some(([a, b]) => line >= a && line <= b)
+    // Per-scene max visits, for normalising heat tiers.
+    const heatMax = new Map<string, number>()
+    if (heat) {
+      for (const [sc, counts] of Object.entries(heat)) {
+        heatMax.set(sc, Math.max(1, ...counts.filter((c) => typeof c === 'number')))
+      }
+    }
+    const tierOf = (own: string, line0: number): number => {
+      if (!heat) return 0
+      const counts = heat[own]
+      if (!counts) return 0
+      const v = counts[line0 + 1] ?? 0
+      if (v <= 0) return 0
+      return Math.max(1, Math.ceil((v / (heatMax.get(own) ?? 1)) * 4))
+    }
     setNodes((nds) =>
       nds.map((n) => {
         const g = (n.data as NodeData | undefined)?.g
@@ -1801,13 +1821,17 @@ function AstCanvasInner({
           return { ...n, data: { ...n.data, unreachedLines: count } }
         }
         if (g.kind === 'stub') return n
-        const un = hit(g.ownScene ?? scene, g.startLine)
-        const base = (n.className ?? '').replace(/\s*gn-unreached/g, '')
-        const cls = un ? `${base} gn-unreached`.trim() : base
+        const own = g.ownScene ?? scene
+        const un = hit(own, g.startLine)
+        const tier = tierOf(own, g.startLine)
+        let cls = (n.className ?? '').replace(/\s*gn-unreached/g, '').replace(/\s*gn-heat-\d/g, '')
+        if (un) cls = `${cls} gn-unreached`
+        if (tier > 0) cls = `${cls} gn-heat-${tier}`
+        cls = cls.trim()
         return cls === (n.className ?? '') ? n : { ...n, className: cls }
       })
     )
-  }, [unreached, built, scene, setNodes])
+  }, [unreached, heat, built, scene, setNodes])
 
   // Re-colour option edges when the custom palette changes.
   useEffect(() => {

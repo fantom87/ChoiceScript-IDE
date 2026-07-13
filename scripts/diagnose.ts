@@ -1188,6 +1188,83 @@ async function main(): Promise<void> {
     return ctx.__thrown
   })
 
+  // --- Playtest Lab: run in a FRESH engine realm (like the worker gets) —
+  // the shared ctx is contaminated by autotester's unsaved prototype patches.
+  await check('Engine', 'Playtest Lab: seeded structured playthroughs', () => {
+    const pctx = vm.createContext({ console, setTimeout, clearTimeout })
+    const loadP = (f: string): void => {
+      vm.runInContext(readFileSync(join(ENGINE, f), 'utf8'), pctx, { filename: f })
+    }
+    loadP('scene.js')
+    loadP('navigator.js')
+    loadP('util.js')
+    loadP('headless.js')
+    vm.runInContext(
+      `
+        var __noop = function(){};
+        main = {};
+        printButton = __noop; printOptions = __noop; printInput = __noop;
+        printImage = __noop; printLink = __noop; printFooter = __noop;
+        printShareLinks = __noop; showPassword = __noop; achieve = __noop;
+        printDiscount = __noop; changeTitle = __noop; startLoading = __noop;
+        println = __noop; printx = __noop; printParagraph = __noop;
+        if (typeof doneLoading === 'undefined') doneLoading = __noop;
+        if (typeof clearScreen === 'undefined') clearScreen = function(cb){ if(cb) cb.call(); };
+        Scene.prototype.verifySceneFile = __noop;
+        Scene.prototype.verifyImage = __noop;
+        Scene.prototype.feedback = __noop;
+      `,
+      pctx,
+      { filename: 'pt-stubs' }
+    )
+    loadP('seedrandom.js')
+    vm.runInContext(
+      readFileSync(join(ROOT, 'src', 'renderer', 'public', 'playtest-core.js'), 'utf8'),
+      pctx,
+      { filename: 'playtest-core.js' }
+    )
+    const ctx = pctx as Record<string, unknown>
+    ctx.__ptFiles = files
+    ctx.__ptGame = generateMygameJs(files['startup'] ?? '', files)
+    vm.runInContext(
+      `
+        __pt1 = PlaytestCore.run(__ptFiles, __ptGame, 40, { seedBase: 7, strategy: 'uniform' });
+        __pt2 = PlaytestCore.run(__ptFiles, __ptGame, 40, { seedBase: 7, strategy: 'uniform' });
+        __pt3 = PlaytestCore.run(__ptFiles, __ptGame, 40, { seedBase: 7, strategy: 'coverage' });
+      `,
+      pctx,
+      { filename: 'diag-playtest' }
+    )
+    type PT = {
+      completed: number
+      errors: { seed: number; message: string }[]
+      endings: Record<string, { count: number }>
+      choices: Record<string, { options: string[]; picks: number[] }>
+      lineCoverage: Record<string, number[]>
+      statsAgg: Record<string, { min: number; max: number; n: number }>
+    }
+    const r1 = ctx.__pt1 as PT
+    const r2 = ctx.__pt2 as PT
+    const r3 = ctx.__pt3 as PT
+    assert(r1.completed === 40, `only ${r1.completed}/40 runs completed: ${r1.errors[0]?.message ?? ''}`)
+    assert(Object.keys(r1.endings).length >= 1, 'no endings recorded')
+    assert(Object.keys(r1.choices).length >= 1, 'no choice pick data recorded')
+    const anyChoice = Object.values(r1.choices)[0]
+    assert(anyChoice.options.length >= 2 && anyChoice.picks.some((p) => p > 0), 'picks not counted')
+    assert(Object.keys(r1.lineCoverage).length >= 2, 'line heat missing')
+    assert(Object.keys(r1.statsAgg).length >= 1, 'stat aggregation missing')
+    // Determinism: identical seedBase → identical ending distribution.
+    assert(
+      JSON.stringify(r1.endings) === JSON.stringify(r2.endings),
+      'same seeds must reproduce the same endings'
+    )
+    // Coverage-seeking spreads picks: no selectable option starves when the
+    // uniform run visits that choice often.
+    const covChoice = Object.values(r3.choices)[0]
+    assert(covChoice.picks.filter((p) => p > 0).length >= 2, 'coverage strategy did not spread picks')
+    return `40 runs ×3: deterministic, ${Object.keys(r1.endings).length} ending(s), ${Object.keys(r1.choices).length} choice site(s), heat on ${Object.keys(r1.lineCoverage).length} scenes`
+  })
+
   // --- Report --------------------------------------------------------------
   const passed = results.filter((r) => r.pass).length
   const failed = results.length - passed

@@ -23,6 +23,7 @@ import { parseChoiceTree } from './choicescript/choiceTree'
 import { AstCanvas } from './graph/AstCanvas'
 import { GameSettingsPanel } from './project/GameSettingsPanel'
 import { HistoryPanel } from './project/HistoryPanel'
+import { PlaytestPanel } from './project/PlaytestPanel'
 import { Tutorial } from './tutorial/Tutorial'
 import { LessonPanel } from './tutorial/LessonPanel'
 import { LESSONS } from './tutorial/lessons'
@@ -86,6 +87,9 @@ export default function App() {
   const [findOpen, setFindOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [playtestOpen, setPlaytestOpen] = useState(false)
+  /** Traversal heat from the last playtest (scene -> visits per 1-based line). */
+  const [playHeat, setPlayHeat] = useState<Record<string, number[]> | null>(null)
   const [renaming, setRenaming] = useState<{ kind: 'variable' | 'label'; oldName: string; scene: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
   // Interactive tutorial (auto-offered on first run, replayable via 🎓).
@@ -1108,6 +1112,7 @@ export default function App() {
             <button className="tb-button" data-tut="settings" onClick={() => setSettingsOpen(true)}>⚙ Game</button>
             <button className="tb-button" data-tut="tests" onClick={runTests}>QuickTest</button>
             <button className="tb-button" onClick={() => setRandomOpen(true)}>RandomTest</button>
+            <button className="tb-button" title="Seeded automated playthroughs with analytics" onClick={() => setPlaytestOpen(true)}>🎲 Playtest</button>
             <button className="tb-button" onClick={exportGame}>Export…</button>
             <span className="learn-wrap">
               <button className="tb-button" title="Learn the IDE and ChoiceScript" onClick={() => setLearnOpen((o) => !o)}>🎓</button>
@@ -1305,6 +1310,7 @@ export default function App() {
                 variables={sceneVariables}
                 onGameModeChange={setCanvasGameMode}
                 unreached={unreachedByScene}
+                heat={playHeat ?? undefined}
                 onNewScene={(name) => void createSceneByName(name, false)}
                 typeColors={config.typeColors}
                 onTypeColors={(patch) =>
@@ -1384,6 +1390,16 @@ export default function App() {
           summary={randomSummary}
           onRun={runRandom}
           onClose={() => setRandomOpen(false)}
+        />
+      )}
+
+      {playtestOpen && project && (
+        <PlaytestPanel
+          files={files}
+          mygameJs={generateMygameJs(files['startup'] ?? '', files)}
+          onJump={(scene, line0) => jumpToProblem(scene, line0, 1)}
+          onHeat={setPlayHeat}
+          onClose={() => setPlaytestOpen(false)}
         />
       )}
 

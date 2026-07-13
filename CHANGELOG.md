@@ -7,6 +7,17 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.49
+
+- 🎲 Playtest Lab: a structured replacement for RandomTest. Seeded automated
+  playthroughs (100–10,000 runs) recording data instead of a text log:
+  ending distribution with percentages (click to jump), stat min/avg/max at
+  game end, options that were never picked, and reproducible failures (the
+  seed replays the exact run). Choose uniform random or coverage-seeking
+  (prefers options it has tried least — finds rare branches faster). Each
+  run also paints a traversal heatmap onto the node canvas: heavily-travelled
+  nodes glow amber, cold paths stay plain.
+
 ## 0.0.48
 
 - Coverage painted onto the canvas: nodes QuickTest's branch-walker never
