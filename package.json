@@ -12,11 +12,11 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "diag": "node ./node_modules/esbuild/bin/esbuild scripts/diagnose.ts --bundle --platform=node --format=cjs --outfile=scripts/diagnose.cjs --loader:.css=empty --jsx=automatic --log-level=error && node scripts/diagnose.cjs",
+    "diag": "npx esbuild scripts/diagnose.ts --bundle --platform=node --format=cjs --outfile=scripts/diagnose.cjs --loader:.css=empty --jsx=automatic --log-level=error && node scripts/diagnose.cjs",
     "diag:app": "electron-vite build && node scripts/diagApp.cjs",
     "dist": "electron-vite build && electron-builder && node scripts/archiveRelease.cjs",
     "release": "node scripts/publishRelease.cjs",
-    "check:game": "node ./node_modules/esbuild/bin/esbuild scripts/checkGame.ts --bundle --platform=node --format=cjs --outfile=scripts/checkGame.cjs --loader:.css=empty --log-level=error && node scripts/checkGame.cjs"
+    "check:game": "npx esbuild scripts/checkGame.ts --bundle --platform=node --format=cjs --outfile=scripts/checkGame.cjs --loader:.css=empty --log-level=error && node scripts/checkGame.cjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
