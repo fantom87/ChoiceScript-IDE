@@ -7,6 +7,14 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.48
+
+- Coverage painted onto the canvas: nodes QuickTest's branch-walker never
+  reaches are dimmed, and in the whole-game view each scene title carries a
+  ⚠ count of unreached lines — dead labels and unlockable options become
+  visible at a glance. Updates automatically as the deep pass runs.
+- (Canonical build for 0.0.47's spellcheck feature — install this one.)
+
 ## 0.0.47
 
 - Prose spellcheck: blue squiggles on unknown words — prose only (commands,
