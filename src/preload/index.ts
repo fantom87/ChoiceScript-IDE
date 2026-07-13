@@ -41,6 +41,12 @@ const api = {
   /** Write a scene's text back to disk. */
   writeScene: (scenesDir: string, name: string, text: string): Promise<void> =>
     ipcRenderer.invoke('scene:write', scenesDir, name, text),
+  /** List a scene's local-history snapshots (newest first). */
+  listHistory: (scenesDir: string, scene: string): Promise<{ id: string; ts: number; size: number }[]> =>
+    ipcRenderer.invoke('history:list', scenesDir, scene),
+  /** Read one local-history snapshot's text. */
+  readHistory: (scenesDir: string, scene: string, id: string): Promise<string> =>
+    ipcRenderer.invoke('history:read', scenesDir, scene, id),
   /** List save points for a project. */
   listSaves: (root: string): Promise<SavePoint[]> => ipcRenderer.invoke('saves:list', root),
   /** Create or update a save point. */
@@ -54,6 +60,9 @@ const api = {
   /** Write per-project IDE config. */
   writeConfig: (root: string, config: IdeConfig): Promise<void> =>
     ipcRenderer.invoke('config:write', root, config),
+  /** Rename a scene file on disk (refs are rewritten by the renderer). */
+  renameScene: (scenesDir: string, oldName: string, newName: string): Promise<{ ok: boolean; reason?: string }> =>
+    ipcRenderer.invoke('scene:rename', scenesDir, oldName, newName),
   /** Create a new scene file. */
   createScene: (scenesDir: string, name: string): Promise<{ created: boolean; reason?: string }> =>
     ipcRenderer.invoke('scene:create', scenesDir, name),

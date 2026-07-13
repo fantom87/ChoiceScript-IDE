@@ -7,6 +7,20 @@ ChoiceScript IDE — a dedicated desktop editor for authoring ChoiceScript games
 > every listed version shipped as a portable build. From v0.0.41 onward each
 > version is also a real commit + tag.
 
+## 0.0.46
+
+- Local file history: every save snapshots the previous version of the scene
+  (deduped, last 25 kept in .cside/history). 🕘 History in the editor header
+  lists them with previews; restoring is itself undoable.
+- Scene rename: hover a scene in the sidebar → ✏ renames the file AND updates
+  *scene_list plus every *goto_scene / *gosub_scene / *redirect_scene across
+  the project.
+- Session restore: reopening a project returns you to the scene and view you
+  left. The status bar now also shows words written this session (+N).
+- CI on GitHub: every push runs the full 40-check headless harness +
+  typecheck; tagged releases automatically gain macOS and Linux builds
+  (Windows stays hand-shipped). The in-app updater is Windows-only by design.
+
 ## 0.0.45
 
 - Advanced tutorial: a second 10-lesson course (🎓 menu) continuing the

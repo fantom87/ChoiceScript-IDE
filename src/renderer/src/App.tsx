@@ -22,6 +22,7 @@ import { ChoiceTreePanel } from './preview/ChoiceTreePanel'
 import { parseChoiceTree } from './choicescript/choiceTree'
 import { AstCanvas } from './graph/AstCanvas'
 import { GameSettingsPanel } from './project/GameSettingsPanel'
+import { HistoryPanel } from './project/HistoryPanel'
 import { Tutorial } from './tutorial/Tutorial'
 import { LessonPanel } from './tutorial/LessonPanel'
 import { LESSONS } from './tutorial/lessons'
@@ -30,6 +31,7 @@ import { lineTints } from './choicescript/ast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { normalizeIndentation } from './choicescript/indent'
 import { insertIntoSceneList } from './choicescript/sceneList'
+import { renameSceneRefs, validSceneName } from './choicescript/sceneRename'
 import { resolveDefinition, detectSymbol, renameVariable, renameLabel, replaceProject } from './choicescript/navigation'
 import { countProject } from './choicescript/wordCount'
 import { InsertMenu } from './editor/InsertMenu'
@@ -80,6 +82,7 @@ export default function App() {
   const [randomSummary, setRandomSummary] = useState<string | null>(null)
   const [findOpen, setFindOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [renaming, setRenaming] = useState<{ kind: 'variable' | 'label'; oldName: string; scene: string } | null>(null)
   const [renameValue, setRenameValue] = useState('')
   // Interactive tutorial (auto-offered on first run, replayable via 🎓).
@@ -110,6 +113,12 @@ export default function App() {
     if (!paths) return null
     return buildProject({ root: paths.root, scenesDir: paths.scenesDir, files })
   }, [paths, files])
+
+  // Persist the session (scene + view) per project for next launch.
+  useEffect(() => {
+    if (!paths || !activeScene) return
+    localStorage.setItem(`cside-session-${paths.root}`, JSON.stringify({ scene: activeScene, view: viewMode }))
+  }, [paths, activeScene, viewMode])
 
   // First run: offer the tour once a project is actually on screen.
   useEffect(() => {
@@ -232,6 +241,9 @@ export default function App() {
   )
 
   const words = useMemo(() => countProject(files), [files])
+  // Session writing stats: project word count when this project was opened.
+  const sessionBaseline = useRef<number | null>(null)
+  const sessionDelta = sessionBaseline.current === null ? 0 : words.total - sessionBaseline.current
 
   // Node-canvas ↔ editor sync: the 1-based line under the editor cursor/mouse.
   const [hoverLine, setHoverLine] = useState<number | null>(null)
@@ -335,14 +347,25 @@ export default function App() {
     (data: { root: string; scenesDir: string; files: Record<string, string> }) => {
       setPaths({ root: data.root, scenesDir: data.scenesDir })
       setFiles(data.files)
+      sessionBaseline.current = countProject(data.files).total
+      // Resume where this project was last left (dev CSIDE_SCENE wins).
+      let session: { scene?: string; view?: 'live' | 'typed' | 'choices' } | null = null
+      try {
+        session = JSON.parse(localStorage.getItem(`cside-session-${data.root}`) ?? 'null')
+      } catch {
+        session = null
+      }
       const initial = window.cside.initialScene
       const first =
         initial && data.files[initial] !== undefined
           ? initial
-          : data.files['startup'] !== undefined
-            ? 'startup'
-            : Object.keys(data.files)[0] ?? null
+          : session?.scene && data.files[session.scene] !== undefined
+            ? session.scene
+            : data.files['startup'] !== undefined
+              ? 'startup'
+              : Object.keys(data.files)[0] ?? null
       setActiveScene(first)
+      if (session?.view) setViewMode(session.view)
       setDirty(new Set())
       setErrors([])
       setBooted(false)
@@ -531,6 +554,49 @@ export default function App() {
       queueReload(sceneName)
     },
     [applyEditUndoable, queueReload]
+  )
+
+  // Rename a scene everywhere: file on disk, *scene_list, every *goto_scene /
+  // *gosub_scene / *redirect_scene reference across the project.
+  const renameSceneByName = useCallback(
+    async (oldName: string, newName: string) => {
+      if (!paths || !oldName || oldName === newName) return
+      if (oldName === 'startup' || oldName === 'choicescript_stats') {
+        setStatus(`${oldName} has a fixed name in ChoiceScript`)
+        return
+      }
+      if (!validSceneName(newName)) {
+        setStatus('Scene names: letters, numbers, - and _ only')
+        return
+      }
+      const res = await window.cside.renameScene(paths.scenesDir, oldName, newName)
+      if (!res.ok) {
+        setStatus(`Rename failed: ${res.reason}`)
+        return
+      }
+      const latest = filesRef.current
+      const changedRefs = renameSceneRefs(latest, oldName, newName)
+      const next: Record<string, string> = {}
+      for (const s of Object.keys(latest)) {
+        if (s === oldName) continue
+        next[s] = changedRefs[s] ?? latest[s]
+      }
+      next[newName] = changedRefs[oldName] ?? latest[oldName]
+      setFiles(next)
+      // Persist every scene whose TEXT changed (the file itself was renamed
+      // on disk already; self-references live in the new file now).
+      for (const s of Object.keys(changedRefs)) {
+        const target = s === oldName ? newName : s
+        await window.cside.writeScene(paths.scenesDir, target, next[target]).catch(() => {})
+      }
+      setDirty((prev) => new Set([...prev].filter((s) => s !== oldName)))
+      if (activeRef.current === oldName) setActiveScene(newName)
+      // scene_list / nav changed — full reboot keeps the engine honest.
+      pendingReload.current.add('startup')
+      flushReload()
+      setStatus(`Renamed ${oldName} → ${newName} (${Object.keys(changedRefs).length} file(s) updated)`)
+    },
+    [paths, flushReload]
   )
 
   // Global undo/redo — works from the node canvas too, not just the editor.
@@ -1043,6 +1109,7 @@ export default function App() {
               activeScene={activeScene}
               dirty={dirty}
               onSelect={setActiveScene}
+              onRename={(a, b) => void renameSceneByName(a, b)}
             />
           )}
           {project && (
@@ -1085,6 +1152,13 @@ export default function App() {
                 </button>
                 <button className="header-btn" title="Preview this scene in isolation" onClick={openIsolate}>
                   ⧉ Isolate
+                </button>
+                <button
+                  className="header-btn"
+                  title="Snapshots taken on every save — restore any earlier version"
+                  onClick={() => setHistoryOpen(true)}
+                >
+                  🕘 History
                 </button>
               </span>
             )}
@@ -1257,6 +1331,15 @@ export default function App() {
         />
       )}
 
+      {historyOpen && paths && activeScene && (
+        <HistoryPanel
+          scenesDir={paths.scenesDir}
+          scene={activeScene}
+          onRestore={applyEditUndoable}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
       {settingsOpen && (
         <GameSettingsPanel
           startupText={files['startup'] ?? ''}
@@ -1319,9 +1402,16 @@ export default function App() {
           />
           Follow
         </label>
-        <span className="statusbar-words" title="Prose word count (this scene / whole project)">
+        <span className="statusbar-words" title="Prose word count (this scene / whole project) — and written this session">
           {activeScene ? `${(words.perScene[activeScene] ?? 0).toLocaleString()} / ` : ''}
           {words.total.toLocaleString()} words
+          {sessionDelta !== 0 && (
+            <span className={`statusbar-session ${sessionDelta > 0 ? 'up' : ''}`}>
+              {' '}
+              ({sessionDelta > 0 ? '+' : ''}
+              {sessionDelta.toLocaleString()})
+            </span>
+          )}
         </span>
         <span className="statusbar-indent">
           Indent:

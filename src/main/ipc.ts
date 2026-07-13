@@ -1,9 +1,10 @@
 import { app, dialog, ipcMain, BrowserWindow } from 'electron'
 import { promises as fs } from 'node:fs'
-import { join, basename, normalize, sep } from 'node:path'
+import { join, basename, dirname, normalize, sep } from 'node:path'
 import type { ProjectData, SavePoint, IdeConfig } from '../shared/types'
 import { DEFAULT_CONFIG } from '../shared/types'
 import * as saveStore from './saveStore'
+import * as historyStore from './historyStore'
 import { buildStandaloneHtml } from './exportHtml'
 import type { ExportOptions } from './exportHtml'
 import { scaffoldProject } from './scaffold'
@@ -163,11 +164,31 @@ export function registerIpc(): void {
     return loadProjectFromDir(dest)
   })
 
+  /** Project root for .cside data, derived from the scenes dir. */
+  const rootOf = (scenesDir: string): string =>
+    basename(scenesDir) === 'scenes' ? dirname(scenesDir) : scenesDir
+
   ipcMain.handle(
     'scene:write',
     async (_e, scenesDir: string, name: string, text: string): Promise<void> => {
-      await fs.writeFile(safeSceneFile(scenesDir, name), text, 'utf8')
+      const filePath = safeSceneFile(scenesDir, name)
+      // Snapshot what's being overwritten — the local file history safety net.
+      try {
+        const prev = await fs.readFile(filePath, 'utf8')
+        if (prev !== text) await historyStore.snapshot(rootOf(scenesDir), name, prev)
+      } catch {
+        /* new file / unreadable — nothing to snapshot */
+      }
+      await fs.writeFile(filePath, text, 'utf8')
     }
+  )
+
+  // --- Local file history ----------------------------------------------------
+  ipcMain.handle('history:list', (_e, scenesDir: string, scene: string) =>
+    historyStore.listSnapshots(rootOf(scenesDir), basename(scene))
+  )
+  ipcMain.handle('history:read', (_e, scenesDir: string, scene: string, id: string) =>
+    historyStore.readSnapshot(rootOf(scenesDir), basename(scene), id)
   )
 
   // --- Save points (stored in <root>/.cside/saves/<id>.json) ---------------
@@ -179,6 +200,20 @@ export function registerIpc(): void {
   )
   ipcMain.handle('saves:delete', (_e, root: string, id: string): Promise<void> =>
     saveStore.deleteSave(root, id)
+  )
+
+  // --- Rename a scene file ---------------------------------------------------
+  ipcMain.handle(
+    'scene:rename',
+    async (_e, scenesDir: string, oldName: string, newName: string): Promise<{ ok: boolean; reason?: string }> => {
+      if (!/^[\w-]+$/.test(newName)) return { ok: false, reason: 'Invalid scene name' }
+      const from = safeSceneFile(scenesDir, oldName)
+      const to = safeSceneFile(scenesDir, newName)
+      if (!(await exists(from))) return { ok: false, reason: `${oldName}.txt not found` }
+      if (await exists(to)) return { ok: false, reason: `${newName}.txt already exists` }
+      await fs.rename(from, to)
+      return { ok: true }
+    }
   )
 
   // --- New scene -----------------------------------------------------------

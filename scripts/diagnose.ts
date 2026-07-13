@@ -12,6 +12,8 @@ import { lintScene, buildLintContext } from '../src/renderer/src/choicescript/li
 import { nearest } from '../src/renderer/src/choicescript/nearest'
 import { generateMygameJs, getSceneList } from '../src/renderer/src/choicescript/mygameGen'
 import { listSaves, writeSave, deleteSave } from '../src/main/saveStore'
+import { snapshot, listSnapshots, readSnapshot } from '../src/main/historyStore'
+import { renameSceneRefs } from '../src/renderer/src/choicescript/sceneRename'
 import { enumerateStats, buildIsolatedRun } from '../src/renderer/src/choicescript/stats'
 import { normalizeIndentation, detectIndentUnit } from '../src/renderer/src/choicescript/indent'
 import { insertIntoSceneList } from '../src/renderer/src/choicescript/sceneList'
@@ -427,6 +429,58 @@ async function main(): Promise<void> {
     }
     assert(!checkLesson(0, fresh).pass, 'the untouched scaffold should not pass lesson 1')
     return `${LESSONS.length} basic + ${ADVANCED_LESSONS.length} advanced: demos valid + lint-clean, progression enforced`
+  })
+  await check('Logic', 'file history: snapshot / dedupe / cap / restore', async () => {
+    const root = join(tmpdir(), `cside-hist-${Date.now()}`)
+    await snapshot(root, 'alpha', 'version one')
+    await snapshot(root, 'alpha', 'version one') // identical → deduped
+    await snapshot(root, 'alpha', 'version two')
+    const list = await listSnapshots(root, 'alpha')
+    assert(list.length === 2, `expected 2 snapshots after dedupe, got ${list.length}`)
+    const newest = await readSnapshot(root, 'alpha', list[0].id)
+    assert(newest === 'version two', `newest snapshot wrong: ${newest}`)
+    // Cap: many snapshots never exceed the limit.
+    for (let i = 0; i < 30; i++) await snapshot(root, 'beta', `v${i}`)
+    const beta = await listSnapshots(root, 'beta')
+    assert(beta.length <= 25, `cap failed: ${beta.length} snapshots`)
+    let threw = false
+    try {
+      await readSnapshot(root, 'alpha', '..\\..\\evil.txt')
+    } catch {
+      threw = true
+    }
+    assert(threw, 'path traversal in snapshot id must throw')
+    await fsp.rm(root, { recursive: true, force: true })
+    return 'snapshot/dedupe/cap/read + id guard ok'
+  })
+  await check('Logic', 'scene rename rewrites scene_list + goto_scene refs', () => {
+    const files = {
+      startup: [
+        '*title T',
+        '*scene_list',
+        '  startup',
+        '  old_name',
+        '  ending',
+        '',
+        'Some prose mentioning old_name casually.',
+        '*goto_scene old_name',
+        '*goto_scene old_name some_label',
+        '*goto_scene older_name',
+        '*finish'
+      ].join('\n'),
+      old_name: ['*comment c', '*gosub_scene old_name helper', '*finish', '*label helper', '*return'].join('\n'),
+      ending: ['*redirect_scene old_name', '*ending'].join('\n')
+    }
+    const changed = renameSceneRefs(files, 'old_name', 'fresh')
+    assert(!!changed.startup && !!changed.old_name && !!changed.ending, 'all three scenes should change')
+    assert(changed.startup.includes('  fresh\n'), 'scene_list entry not renamed')
+    assert(changed.startup.includes('*goto_scene fresh\n'), 'bare goto_scene not renamed')
+    assert(changed.startup.includes('*goto_scene fresh some_label'), 'goto_scene with label arg broken')
+    assert(changed.startup.includes('*goto_scene older_name'), 'prefix-named scene must NOT be renamed')
+    assert(changed.startup.includes('prose mentioning old_name casually'), 'prose must not be touched')
+    assert(changed.old_name.includes('*gosub_scene fresh helper'), 'gosub_scene not renamed')
+    assert(changed.ending.includes('*redirect_scene fresh'), 'redirect_scene not renamed')
+    return 'scene_list + goto/gosub/redirect refs rewritten; prose + prefixes untouched'
   })
   await check('Logic', 'update check picks newer releases correctly', () => {
     assert(isNewerVersion('0.0.41', 'v0.0.42'), '0.0.42 should be newer than 0.0.41')

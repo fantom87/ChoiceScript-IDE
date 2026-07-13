@@ -17,6 +17,7 @@ const API = `https://api.github.com/repos/${REPO}/releases/latest`
 
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
   if (!app.isPackaged) return null // dev runs aren't updatable
+  if (process.platform !== 'win32') return null // the updater ships the portable exe
   try {
     const res = await fetch(API, {
       headers: { 'User-Agent': 'ChoiceScript-IDE', Accept: 'application/vnd.github+json' }

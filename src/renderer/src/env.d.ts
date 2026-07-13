@@ -22,11 +22,18 @@ declare global {
       getLastProject: () => Promise<string | null>
       setLastProject: (root: string) => Promise<void>
       writeScene: (scenesDir: string, name: string, text: string) => Promise<void>
+      listHistory: (scenesDir: string, scene: string) => Promise<{ id: string; ts: number; size: number }[]>
+      readHistory: (scenesDir: string, scene: string, id: string) => Promise<string>
       listSaves: (root: string) => Promise<SavePoint[]>
       writeSave: (root: string, save: SavePoint) => Promise<void>
       deleteSave: (root: string, id: string) => Promise<void>
       readConfig: (root: string) => Promise<IdeConfig>
       writeConfig: (root: string, config: IdeConfig) => Promise<void>
+      renameScene: (
+        scenesDir: string,
+        oldName: string,
+        newName: string
+      ) => Promise<{ ok: boolean; reason?: string }>
       createScene: (
         scenesDir: string,
         name: string
