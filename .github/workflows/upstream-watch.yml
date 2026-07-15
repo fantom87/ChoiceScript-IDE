@@ -1,0 +1,40 @@
+name: upstream-watch
+
+# Weekly check: has dfabulich/choicescript moved past the engine snapshot we
+# bundle? If so, open (or update) an issue so the update gets vendored through
+# a proper IDE release — never auto-applied.
+on:
+  schedule:
+    - cron: '17 9 * * 1' # Mondays
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare bundled engine snapshot to upstream HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned=$(jq -r '.sha' resources/engine/UPSTREAM.json)
+          upstream=$(gh api repos/dfabulich/choicescript/commits --jq '.[0].sha[0:10]')
+          echo "pinned=$pinned upstream=$upstream"
+          if [ "$pinned" = "$upstream" ]; then
+            echo "engine is current"
+            exit 0
+          fi
+          title="ChoiceScript upstream has moved (engine update available)"
+          log=$(gh api "repos/dfabulich/choicescript/commits?per_page=15" \
+            --jq '.[] | "- " + .commit.committer.date[0:10] + " " + (.commit.message | split("\n")[0])')
+          body=$(printf 'Bundled engine snapshot: `%s`\nUpstream HEAD: `%s`\n\nRecent upstream commits:\n%s\n\nVendor via: update resources/engine, run `npm run typecheck` + `npm run diag` + `npm run check:game` on the gauntlet, fix integration fallout, bump UPSTREAM.json, ship a release.' "$pinned" "$upstream" "$log")
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

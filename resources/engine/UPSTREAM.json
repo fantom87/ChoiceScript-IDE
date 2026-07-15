@@ -1,0 +1,6 @@
+{
+  "repo": "dfabulich/choicescript",
+  "sha": "60a6c3ee73",
+  "date": "2026-05-29",
+  "note": "Upstream snapshot our bundled engine matches. The upstream-watch workflow compares this against upstream HEAD weekly and opens an issue when ChoiceScript moves; engine updates are vendored through IDE releases after the full harness passes."
+}
