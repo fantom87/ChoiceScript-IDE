@@ -1,40 +1,90 @@
 name: upstream-watch
 
-# Weekly check: has dfabulich/choicescript moved past the engine snapshot we
-# bundle? If so, open (or update) an issue so the update gets vendored through
-# a proper IDE release — never auto-applied.
+# Weekly: if dfabulich/choicescript has moved past the engine snapshot we
+# bundle, download the vendored files from upstream HEAD and open a pull
+# request. The ci workflow then runs the full 43-check harness (which boots
+# the real engine) against the new engine — green checks mean the update is
+# provably compatible. Merging stays a human decision; the update ships to
+# users with the next IDE release. Never auto-applied to main.
 on:
   schedule:
     - cron: '17 9 * * 1' # Mondays
   workflow_dispatch:
 
 permissions:
-  contents: read
-  issues: write
+  contents: write
+  pull-requests: write
 
 jobs:
-  watch:
+  vendor:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Compare bundled engine snapshot to upstream HEAD
+      - name: Vendor upstream engine + open PR when it has moved
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           pinned=$(jq -r '.sha' resources/engine/UPSTREAM.json)
-          upstream=$(gh api repos/dfabulich/choicescript/commits --jq '.[0].sha[0:10]')
+          head_json=$(gh api repos/dfabulich/choicescript/commits --jq '.[0]')
+          upstream=$(jq -r '.sha[0:10]' <<<"$head_json")
+          updated=$(jq -r '.commit.committer.date[0:10]' <<<"$head_json")
           echo "pinned=$pinned upstream=$upstream"
           if [ "$pinned" = "$upstream" ]; then
             echo "engine is current"
             exit 0
           fi
-          title="ChoiceScript upstream has moved (engine update available)"
+          branch="engine-update-$upstream"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "update branch already open: $branch"
+            exit 0
+          fi
+
+          # Our resources/engine file -> its path in the upstream repo.
+          # engine.html and UPSTREAM.json are OURS — never vendored.
+          declare -A MAP=(
+            [scene.js]=web/scene.js
+            [util.js]=web/util.js
+            [navigator.js]=web/navigator.js
+            [ui.js]=web/ui.js
+            [persist.js]=web/persist.js
+            [style.css]=web/style.css
+            [alertify.css]=web/alertify.css
+            [alertify.min.js]=web/alertify.min.js
+            [OpenDyslexic-Regular.woff2]=web/OpenDyslexic-Regular.woff2
+            [OpenDyslexic-Bold.woff2]=web/OpenDyslexic-Bold.woff2
+            [OpenDyslexic-Italic.woff2]=web/OpenDyslexic-Italic.woff2
+            [OpenDyslexic-Bold-Italic.woff2]=web/OpenDyslexic-Bold-Italic.woff2
+            [seedrandom.js]=seedrandom.js
+            [headless.js]=headless.js
+            [autotest.js]=autotest.js
+            [randomtest.js]=randomtest.js
+            [compile.js]=compile.js
+            [mygamegenerator.js]=mygamegenerator.js
+            [embeddable-autotester.js]=editor/embeddable-autotester.js
+          )
+          full_sha=$(jq -r '.sha' <<<"$head_json")
+          for ours in "${!MAP[@]}"; do
+            curl -sSf "https://raw.githubusercontent.com/dfabulich/choicescript/$full_sha/${MAP[$ours]}" \
+              -o "resources/engine/$ours"
+          done
+          jq --arg sha "$upstream" --arg date "$updated" '.sha=$sha | .date=$date' \
+            resources/engine/UPSTREAM.json > /tmp/up.json && mv /tmp/up.json resources/engine/UPSTREAM.json
+
+          git config user.name 'engine-update bot'
+          git config user.email 'actions@github.com'
+          git checkout -b "$branch"
+          git add resources/engine
+          if git diff --cached --quiet; then
+            echo "upstream moved but no vendored file changed — pin bump only"
+          fi
+          git commit -m "engine: vendor ChoiceScript upstream $upstream ($updated)"
+          git push -u origin "$branch"
+
           log=$(gh api "repos/dfabulich/choicescript/commits?per_page=15" \
             --jq '.[] | "- " + .commit.committer.date[0:10] + " " + (.commit.message | split("\n")[0])')
-          body=$(printf 'Bundled engine snapshot: `%s`\nUpstream HEAD: `%s`\n\nRecent upstream commits:\n%s\n\nVendor via: update resources/engine, run `npm run typecheck` + `npm run diag` + `npm run check:game` on the gauntlet, fix integration fallout, bump UPSTREAM.json, ship a release.' "$pinned" "$upstream" "$log")
-          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "$title" --body "$body"
-          fi
+          body=$(printf 'Automated vendor of ChoiceScript upstream `%s` (was `%s`).\n\nRecent upstream commits:\n%s\n\nThe ci workflow runs the full headless harness against this engine — merge only on green. After merging, run the stress gauntlet + a real game through `npm run check:game` locally, then ship a release.' "$upstream" "$pinned" "$log")
+          gh pr create --title "engine: ChoiceScript upstream $upstream" --body "$body" \
+            --base main --head "$branch"
+          # PRs opened with the workflow token don't auto-trigger CI — kick it.
+          gh workflow run ci --ref "$branch"
